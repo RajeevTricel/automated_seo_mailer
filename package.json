@@ -1,0 +1,19 @@
+{
+  "name": "automated-seo-mailer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Automated Tricel PageSpeed reporting with Node.js, SMTP, and GitHub Actions.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "report": "node index.js",
+    "dry-run": "node index.js --dry-run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "nodemailer": "^6.10.1"
+  }
+}
