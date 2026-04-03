@@ -1,3 +1,4 @@
+// /index.js
 'use strict';
 
 require('dotenv').config();
@@ -401,7 +402,6 @@ function buildStrategySections(report) {
 
 function buildOverviewText(report) {
   const lines = [];
-
   const overallAverage =
     report.summary.averagePerformance == null ? 'N/A' : `${report.summary.averagePerformance}%`;
 
@@ -421,6 +421,20 @@ function buildOverviewText(report) {
   }
 
   return lines.join('\n');
+}
+
+function buildStrategyLabel(report) {
+  return report.strategies
+    .map((strategyBlock) => strategyBlock.strategy.toUpperCase())
+    .join(' + ');
+}
+
+function buildAverageDisplay(summary) {
+  return summary.averagePerformance == null ? 'N/A' : `${summary.averagePerformance}%`;
+}
+
+function buildEmailDetailHtml(report) {
+  return buildStrategySections(report);
 }
 
 function buildHtmlReport(report, generatedAt, timeZone) {
@@ -474,13 +488,7 @@ function buildTextReport(report, generatedAt, timeZone) {
 
   for (const strategyBlock of report.strategies) {
     lines.push(`[${strategyBlock.strategy.toUpperCase()}]`);
-    lines.push(
-      `Average Performance: ${
-        strategyBlock.summary.averagePerformance == null
-          ? 'N/A'
-          : `${strategyBlock.summary.averagePerformance}%`
-      }`
-    );
+    lines.push(`Average Performance: ${buildAverageDisplay(strategyBlock.summary)}`);
     lines.push(
       `Good: ${strategyBlock.summary.good} | Warning: ${strategyBlock.summary.warning} | Poor: ${strategyBlock.summary.poor} | Failed: ${strategyBlock.summary.failed}`
     );
@@ -520,13 +528,10 @@ function buildSubject(report, generatedAt, timeZone) {
     timeZone
   }).format(generatedAt);
 
-  const average =
-    report.summary.averagePerformance == null ? 'N/A' : `${report.summary.averagePerformance}%`;
-
-  return `${prefix} Report - ${date} - Avg ${average}`;
+  return `${prefix} Report - ${date} - Avg ${buildAverageDisplay(report.summary)}`;
 }
 
-async function sendEmail(report, html, text, generatedAt, timeZone) {
+async function sendEmail(report, generatedAt, timeZone, text) {
   const payload = {
     service_id: getRequiredEnv('EMAILJS_SERVICE_ID'),
     template_id: getRequiredEnv('EMAILJS_TEMPLATE_ID'),
@@ -536,9 +541,15 @@ async function sendEmail(report, html, text, generatedAt, timeZone) {
       to_email: getRequiredEnv('EMAIL_TO'),
       reply_to: getEnv('EMAIL_REPLY_TO', getRequiredEnv('EMAIL_TO')),
       from_name: getEnv('EMAIL_FROM_NAME', 'Tricel PageSpeed Reports'),
-      overview_text: buildOverviewText(report),
       generated_at: formatTimestamp(generatedAt, timeZone),
-      email_html: html,
+      strategy_label: buildStrategyLabel(report),
+      overview_text: buildOverviewText(report),
+      avg_perf: buildAverageDisplay(report.summary),
+      good_count: String(report.summary.good),
+      warning_count: String(report.summary.warning),
+      poor_count: String(report.summary.poor),
+      failed_count: String(report.summary.failed),
+      email_html: buildEmailDetailHtml(report),
       text_report: text
     }
   };
@@ -629,7 +640,7 @@ async function main() {
     return;
   }
 
-  const result = await sendEmail(report, html, text, generatedAt, timeZone);
+  const result = await sendEmail(report, generatedAt, timeZone, text);
   process.stdout.write(`EmailJS response: ${result}\n`);
 
   if (report.summary.failed > 0 && strictMode) {
