@@ -1,15 +1,13 @@
 'use strict';
 
-// /index.js
-
 require('dotenv').config();
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const nodemailer = require('nodemailer');
 const { SITE_GROUPS } = require('./sites');
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const EMAILJS_SEND_URL = 'https://api.emailjs.com/api/v1.0/email/send';
 
 function getRequiredEnv(name) {
   const value = process.env[name];
@@ -194,7 +192,7 @@ async function fetchPageSpeedScores(targetUrl, apiKey, strategy) {
   const requestUrl = buildPageSpeedUrl(targetUrl, apiKey, strategy);
   const response = await fetch(requestUrl, {
     headers: {
-      'Accept': 'application/json',
+      Accept: 'application/json',
       'User-Agent': 'automated-seo-mailer/1.0'
     }
   });
@@ -229,8 +227,11 @@ async function fetchWithRetry(targetUrl, apiKey, strategy, attempts = 2) {
 
 async function collectStrategyResults(strategy, apiKey, delayMs) {
   const groups = [];
+  const groupNames = Object.keys(SITE_GROUPS);
 
-  for (const [groupName, urls] of Object.entries(SITE_GROUPS)) {
+  for (let groupIndex = 0; groupIndex < groupNames.length; groupIndex += 1) {
+    const groupName = groupNames[groupIndex];
+    const urls = SITE_GROUPS[groupName];
     const entries = [];
 
     for (let index = 0; index < urls.length; index += 1) {
@@ -262,7 +263,7 @@ async function collectStrategyResults(strategy, apiKey, delayMs) {
       }
 
       const isLastRequest =
-        groupName === Object.keys(SITE_GROUPS).at(-1) && index === urls.length - 1;
+        groupIndex === groupNames.length - 1 && index === urls.length - 1;
 
       if (!isLastRequest) {
         await sleep(delayMs);
@@ -351,8 +352,8 @@ function renderEntryRow(entry) {
   `;
 }
 
-function buildHtmlReport(report, generatedAt, timeZone) {
-  const strategySections = report.strategies
+function buildStrategySections(report) {
+  return report.strategies
     .map((strategyBlock) => {
       const groupSections = strategyBlock.groups
         .map(
@@ -396,6 +397,35 @@ function buildHtmlReport(report, generatedAt, timeZone) {
       `;
     })
     .join('');
+}
+
+function buildOverviewText(report) {
+  const lines = [];
+
+  const overallAverage =
+    report.summary.averagePerformance == null ? 'N/A' : `${report.summary.averagePerformance}%`;
+
+  lines.push(
+    `Overall average performance: ${overallAverage}. Good: ${report.summary.good}, Warning: ${report.summary.warning}, Poor: ${report.summary.poor}, Failed: ${report.summary.failed}.`
+  );
+
+  for (const strategyBlock of report.strategies) {
+    const average =
+      strategyBlock.summary.averagePerformance == null
+        ? 'N/A'
+        : `${strategyBlock.summary.averagePerformance}%`;
+
+    lines.push(
+      `${strategyBlock.strategy.toUpperCase()}: Avg ${average}, Good ${strategyBlock.summary.good}, Warning ${strategyBlock.summary.warning}, Poor ${strategyBlock.summary.poor}, Failed ${strategyBlock.summary.failed}.`
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function buildHtmlReport(report, generatedAt, timeZone) {
+  const overviewText = buildOverviewText(report);
+  const strategySections = buildStrategySections(report);
 
   return `
 <!DOCTYPE html>
@@ -413,11 +443,17 @@ function buildHtmlReport(report, generatedAt, timeZone) {
         </div>
       </div>
 
-      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 24px;">
-        <tr>
-          ${renderSummaryCards(report.summary)}
-        </tr>
-      </table>
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; margin-bottom: 24px;">
+        <div style="font-size: 22px; font-weight: 800; color: #0f172a; margin-bottom: 16px;">Overview</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 16px;">
+          <tr>
+            ${renderSummaryCards(report.summary)}
+          </tr>
+        </table>
+        <div style="font-size: 15px; line-height: 1.7; color: #334155; white-space: pre-line;">
+          ${htmlEscape(overviewText)}
+        </div>
+      </div>
 
       ${strategySections}
     </div>
@@ -431,6 +467,8 @@ function buildTextReport(report, generatedAt, timeZone) {
     'TRICEL PAGESPEED REPORT',
     `Generated: ${formatTimestamp(generatedAt, timeZone)}`,
     `Timezone: ${timeZone}`,
+    '',
+    buildOverviewText(report),
     ''
   ];
 
@@ -488,51 +526,45 @@ function buildSubject(report, generatedAt, timeZone) {
   return `${prefix} Report - ${date} - Avg ${average}`;
 }
 
-function buildTransporter() {
-  const host = getRequiredEnv('SMTP_HOST');
-  const port = getNumberEnv('SMTP_PORT', 587);
-  const secure = getBooleanEnv('SMTP_SECURE', port === 465);
-  const user = getRequiredEnv('SMTP_USER');
-  const pass = getRequiredEnv('SMTP_PASS');
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: {
-      user,
-      pass
-    }
-  });
-}
-
 async function sendEmail(report, html, text, generatedAt, timeZone) {
-  const transporter = buildTransporter();
-
-  if (getBooleanEnv('VERIFY_SMTP', true)) {
-    await transporter.verify();
-  }
-
-  const message = {
-    from: getRequiredEnv('EMAIL_FROM'),
-    to: getRequiredEnv('EMAIL_TO'),
-    subject: buildSubject(report, generatedAt, timeZone),
-    html,
-    text
+  const payload = {
+    service_id: getRequiredEnv('EMAILJS_SERVICE_ID'),
+    template_id: getRequiredEnv('EMAILJS_TEMPLATE_ID'),
+    user_id: getRequiredEnv('EMAILJS_PUBLIC_KEY'),
+    template_params: {
+      subject: buildSubject(report, generatedAt, timeZone),
+      to_email: getRequiredEnv('EMAIL_TO'),
+      reply_to: getEnv('EMAIL_REPLY_TO', getRequiredEnv('EMAIL_TO')),
+      from_name: getEnv('EMAIL_FROM_NAME', 'Tricel PageSpeed Reports'),
+      overview_text: buildOverviewText(report),
+      generated_at: formatTimestamp(generatedAt, timeZone),
+      email_html: html,
+      text_report: text
+    }
   };
 
-  const cc = getEnv('EMAIL_CC');
-  const bcc = getEnv('EMAIL_BCC');
+  const privateKey = getEnv('EMAILJS_PRIVATE_KEY');
 
-  if (cc) {
-    message.cc = cc;
+  if (privateKey) {
+    payload.accessToken = privateKey;
   }
 
-  if (bcc) {
-    message.bcc = bcc;
+  const response = await fetch(EMAILJS_SEND_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/plain'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`EmailJS ${response.status}: ${responseText}`);
   }
 
-  return transporter.sendMail(message);
+  return responseText;
 }
 
 function aggregateReport(strategyResults) {
@@ -597,12 +629,10 @@ async function main() {
     return;
   }
 
-  const info = await sendEmail(report, html, text, generatedAt, timeZone);
-  process.stdout.write(`Email sent: ${info.messageId}\n`);
+  const result = await sendEmail(report, html, text, generatedAt, timeZone);
+  process.stdout.write(`EmailJS response: ${result}\n`);
 
-  const hasFailures = report.summary.failed > 0;
-
-  if (hasFailures && strictMode) {
+  if (report.summary.failed > 0 && strictMode) {
     process.exitCode = 1;
   }
 }
