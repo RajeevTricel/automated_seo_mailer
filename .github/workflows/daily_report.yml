@@ -1,16 +1,18 @@
-name: Daily PageSpeed Report
+# .github/workflows/daily-report.yml
+name: Daily PageSpeed Demo
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 8 * * *"
+    - cron: "0 8 * * *"
+      timezone: "Europe/Dublin"
 
 concurrency:
-  group: daily-pagespeed-report
+  group: daily-pagespeed-demo
   cancel-in-progress: false
 
 jobs:
-  send-report:
+  dry-run-report:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,22 +28,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run PageSpeed report
-        run: npm run report
+      - name: Generate report preview without sending email
+        run: npm run dry-run
         env:
           PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          EMAIL_CC: ${{ secrets.EMAIL_CC }}
-          EMAIL_BCC: ${{ secrets.EMAIL_BCC }}
-          SUBJECT_PREFIX: ${{ vars.SUBJECT_PREFIX }}
           REPORT_STRATEGIES: ${{ vars.REPORT_STRATEGIES }}
           REQUEST_DELAY_MS: ${{ vars.REQUEST_DELAY_MS }}
           TIMEZONE: Europe/Dublin
-          VERIFY_SMTP: "true"
-          STRICT_MODE: "false"
+
+      - name: Upload HTML preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: pagespeed-report-preview
+          path: report-preview.html
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Demo note
+        run: echo "Report generation succeeded. Email sending intentionally skipped for demo."
