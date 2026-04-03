@@ -1,5 +1,5 @@
 # .github/workflows/daily-report.yml
-name: Daily PageSpeed Demo
+name: Daily PageSpeed Report
 
 on:
   workflow_dispatch:
@@ -8,11 +8,11 @@ on:
       timezone: "Europe/Dublin"
 
 concurrency:
-  group: daily-pagespeed-demo
+  group: daily-pagespeed-report
   cancel-in-progress: false
 
 jobs:
-  dry-run-report:
+  send-report:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,21 +28,19 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Generate report preview without sending email
-        run: npm run dry-run
+      - name: Generate report and send via EmailJS
+        run: npm run report
         env:
           PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
+          EMAILJS_SERVICE_ID: ${{ secrets.EMAILJS_SERVICE_ID }}
+          EMAILJS_TEMPLATE_ID: ${{ secrets.EMAILJS_TEMPLATE_ID }}
+          EMAILJS_PUBLIC_KEY: ${{ secrets.EMAILJS_PUBLIC_KEY }}
+          EMAILJS_PRIVATE_KEY: ${{ secrets.EMAILJS_PRIVATE_KEY }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_REPLY_TO: ${{ secrets.EMAIL_REPLY_TO }}
           REPORT_STRATEGIES: ${{ vars.REPORT_STRATEGIES }}
           REQUEST_DELAY_MS: ${{ vars.REQUEST_DELAY_MS }}
+          SUBJECT_PREFIX: ${{ vars.SUBJECT_PREFIX }}
+          EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
           TIMEZONE: Europe/Dublin
-
-      - name: Upload HTML preview
-        uses: actions/upload-artifact@v4
-        with:
-          name: pagespeed-report-preview
-          path: report-preview.html
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Demo note
-        run: echo "Report generation succeeded. Email sending intentionally skipped for demo."
+          STRICT_MODE: "false"
