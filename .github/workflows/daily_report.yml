@@ -3,7 +3,7 @@ name: Daily PageSpeed Report
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 8 * * *"
+    - cron: "7 8 * * *"
       timezone: "Europe/Dublin"
 
 permissions:
@@ -42,6 +42,7 @@ jobs:
           REPORT_STRATEGIES: ${{ vars.REPORT_STRATEGIES }}
           REQUEST_DELAY_MS: ${{ vars.REQUEST_DELAY_MS }}
           TIMEZONE: Europe/Dublin
+          REPORT_TRIGGER_URL: ${{ vars.REPORT_TRIGGER_URL }}
           REPORT_REFRESH_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/daily-report.yml
 
       - name: Prepare Pages site
@@ -75,3 +76,4 @@ jobs:
           TIMEZONE: Europe/Dublin
           REPORT_URL: ${{ steps.deployment.outputs.page_url }}
           STRICT_MODE: "false"
+
