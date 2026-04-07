@@ -659,6 +659,52 @@ async function main() {
     process.exitCode = 1;
   }
 }
+function aggregateReport(strategyResults) {
+  const allEntries = strategyResults.flatMap((strategyBlock) =>
+    strategyBlock.groups.flatMap((group) => group.entries)
+  );
+
+  return {
+    strategies: strategyResults,
+    summary: summarize(allEntries)
+  };
+}
+
+async function buildFreshReport(apiKey, timeZone, delayMs) {
+  const strategies = getEnv('REPORT_STRATEGIES', 'mobile,desktop')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (strategies.length === 0) {
+    throw new Error('REPORT_STRATEGIES must include at least one strategy');
+  }
+
+  for (const strategy of strategies) {
+    if (!['mobile', 'desktop'].includes(strategy)) {
+      throw new Error(`Unsupported strategy: ${strategy}`);
+    }
+  }
+
+  const generatedAt = new Date();
+  const strategyResults = [];
+
+  for (let index = 0; index < strategies.length; index += 1) {
+    const strategy = strategies[index];
+    const result = await collectStrategyResults(strategy, apiKey, delayMs);
+    strategyResults.push(result);
+
+    if (index < strategies.length - 1) {
+      await sleep(delayMs);
+    }
+  }
+
+  return {
+    generatedAt,
+    report: aggregateReport(strategyResults),
+    timeZone
+  };
+}
 
 main().catch((error) => {
   console.error(error);
