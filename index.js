@@ -1,5 +1,4 @@
-// /index.js
-'use strict';
+use strict';
 
 require('dotenv').config();
 
@@ -154,6 +153,45 @@ function summarize(entries) {
     failed,
     total: entries.length
   };
+}
+
+function getStrategyRank(strategy) {
+  if (strategy === 'desktop') {
+    return 0;
+  }
+
+  if (strategy === 'mobile') {
+    return 1;
+  }
+
+  return 99;
+}
+
+function getStrategiesFromEnv() {
+  const strategies = getEnv('REPORT_STRATEGIES', 'desktop,mobile')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  const uniqueStrategies = [...new Set(strategies)];
+
+  if (uniqueStrategies.length === 0) {
+    throw new Error('REPORT_STRATEGIES must include at least one strategy');
+  }
+
+  for (const strategy of uniqueStrategies) {
+    if (!['mobile', 'desktop'].includes(strategy)) {
+      throw new Error(`Unsupported strategy: ${strategy}`);
+    }
+  }
+
+  return uniqueStrategies.sort((left, right) => getStrategyRank(left) - getStrategyRank(right));
+}
+
+function getOrderedStrategyBlocks(report) {
+  return [...report.strategies].sort(
+    (left, right) => getStrategyRank(left.strategy) - getStrategyRank(right.strategy)
+  );
 }
 
 function buildPageSpeedUrl(targetUrl, apiKey, strategy) {
@@ -359,7 +397,7 @@ function renderEntryRow(entry) {
 }
 
 function buildStrategySections(report) {
-  return report.strategies
+  return getOrderedStrategyBlocks(report)
     .map((strategyBlock) => {
       const groupSections = strategyBlock.groups
         .map(
@@ -412,7 +450,7 @@ function buildAverageDisplay(summary) {
 function getEmailStrategyBlock(report) {
   return (
     report.strategies.find((strategyBlock) => strategyBlock.strategy === 'desktop') ||
-    report.strategies[0]
+    getOrderedStrategyBlocks(report)[0]
   );
 }
 
@@ -501,9 +539,28 @@ function buildDesktopDetailHtml(report) {
     .join('');
 }
 
+function buildRefreshActionHtml() {
+  const refreshUrl = getEnv('REPORT_REFRESH_URL');
+
+  if (!refreshUrl) {
+    return '';
+  }
+
+  return `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;">
+      <a href="${htmlEscape(refreshUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">
+        Run Fresh Check
+      </a>
+    </div>
+    <div style="margin-top:10px;font-size:13px;color:#cbd5e1;">
+      Opens the workflow page so a new report can be generated safely.
+    </div>
+  `;
+}
+
 function buildHtmlReport(report, generatedAt, timeZone) {
   const strategySections = buildStrategySections(report);
-  const overallSummaryText = report.strategies
+  const overallSummaryText = getOrderedStrategyBlocks(report)
     .map(
       (strategyBlock) =>
         `${strategyBlock.strategy.toUpperCase()}: Avg ${buildAverageDisplay(strategyBlock.summary)}, Good ${strategyBlock.summary.good}, Warning ${strategyBlock.summary.warning}, Poor ${strategyBlock.summary.poor}, Failed ${strategyBlock.summary.failed}.`
@@ -522,8 +579,9 @@ function buildHtmlReport(report, generatedAt, timeZone) {
       <div style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);border-radius:24px;padding:28px 32px;margin-bottom:24px;">
         <div style="font-size:34px;font-weight:900;color:#ffffff;margin-bottom:8px;">Tricel PageSpeed Report</div>
         <div style="font-size:14px;color:#cbd5e1;">
-          Generated ${htmlEscape(formatTimestamp(generatedAt, timeZone))} · MOBILE + DESKTOP
+          Generated ${htmlEscape(formatTimestamp(generatedAt, timeZone))} · DESKTOP + MOBILE
         </div>
+        ${buildRefreshActionHtml()}
       </div>
 
       <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:24px;">
@@ -632,21 +690,7 @@ async function readSnapshot() {
 }
 
 async function buildFreshReport(apiKey, timeZone, delayMs) {
-  const strategies = getEnv('REPORT_STRATEGIES', 'mobile,desktop')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (strategies.length === 0) {
-    throw new Error('REPORT_STRATEGIES must include at least one strategy');
-  }
-
-  for (const strategy of strategies) {
-    if (!['mobile', 'desktop'].includes(strategy)) {
-      throw new Error(`Unsupported strategy: ${strategy}`);
-    }
-  }
-
+  const strategies = getStrategiesFromEnv();
   const generatedAt = new Date();
   const strategyResults = [];
 
@@ -769,4 +813,4 @@ async function main() {
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
-}); 
+});
