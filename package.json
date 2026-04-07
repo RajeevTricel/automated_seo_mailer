@@ -2,12 +2,14 @@
   "name": "automated-seo-mailer",
   "version": "1.0.0",
   "private": true,
-  "description": "Automated Tricel PageSpeed reporting with Node.js, EmailJS, and GitHub Actions.",
+  "description": "Automated Tricel PageSpeed reporting with Node.js, EmailJS, GitHub Pages, and GitHub Actions.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "report": "node index.js",
-    "dry-run": "node index.js --dry-run"
+    "dry-run": "node index.js --dry-run",
+    "build-report": "node index.js --build-only",
+    "send-email": "node index.js --send-only"
   },
   "engines": {
     "node": ">=20"
