@@ -35,14 +35,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build full HTML report
-        run: npm run dry-run
+      - name: Build report snapshot once
+        run: npm run build-report
         env:
           PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
           REPORT_STRATEGIES: ${{ vars.REPORT_STRATEGIES }}
           REQUEST_DELAY_MS: ${{ vars.REQUEST_DELAY_MS }}
-          SUBJECT_PREFIX: ${{ vars.SUBJECT_PREFIX }}
-          EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
           TIMEZONE: Europe/Dublin
 
       - name: Prepare Pages site
@@ -62,18 +60,20 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Send overview email via EmailJS
-        run: npm run report
+      - name: Send overview email from saved snapshot
+        run: npm run send-email
         env:
-          PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
           EMAILJS_SERVICE_ID: ${{ secrets.EMAILJS_SERVICE_ID }}
           EMAILJS_TEMPLATE_ID: ${{ secrets.EMAILJS_TEMPLATE_ID }}
           EMAILJS_PUBLIC_KEY: ${{ secrets.EMAILJS_PUBLIC_KEY }}
           EMAILJS_PRIVATE_KEY: ${{ secrets.EMAILJS_PRIVATE_KEY }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           EMAIL_REPLY_TO: ${{ secrets.EMAIL_REPLY_TO }}
-          REPORT_STRATEGIES: ${{ vars.REPORT_STRATEGIES }}
-          REQUEST_DELAY_MS: ${{ vars.REQUEST_DELAY_MS }}
+          SUBJECT_PREFIX: ${{ vars.SUBJECT_PREFIX }}
+          EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
+          TIMEZONE: Europe/Dublin
+          REPORT_URL: ${{ steps.deployment.outputs.page_url }}
+          STRICT_MODE: "false"
           SUBJECT_PREFIX: ${{ vars.SUBJECT_PREFIX }}
           EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
           TIMEZONE: Europe/Dublin
