@@ -1,4 +1,3 @@
-// FILE: index.js
 'use strict';
 
 require('dotenv').config();
@@ -8,7 +7,12 @@ const path = require('node:path');
 const { SITE_GROUPS } = require('./sites');
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const BUILD_ONLY = process.argv.includes('--build-only');
+const SEND_ONLY = process.argv.includes('--send-only');
+
 const EMAILJS_SEND_URL = 'https://api.emailjs.com/api/v1.0/email/send';
+const REPORT_HTML_PATH = path.join(process.cwd(), 'report-preview.html');
+const REPORT_DATA_PATH = path.join(process.cwd(), 'report-data.json');
 
 function getRequiredEnv(name) {
   const value = process.env[name];
@@ -417,7 +421,7 @@ function buildEmailOverviewText(report) {
   return [
     `${strategyBlock.strategy.toUpperCase()} average performance: ${buildAverageDisplay(strategyBlock.summary)}.`,
     `Good: ${strategyBlock.summary.good}, Warning: ${strategyBlock.summary.warning}, Poor: ${strategyBlock.summary.poor}, Failed: ${strategyBlock.summary.failed}.`,
-    'Full HTML report below includes both MOBILE and DESKTOP analysis via the link.'
+    'Use the full report link below for complete MOBILE + DESKTOP analysis.'
   ].join(' ');
 }
 
@@ -477,23 +481,21 @@ function buildHtmlReport(report, generatedAt, timeZone) {
     <meta charset="utf-8" />
     <title>Tricel PageSpeed Report</title>
   </head>
-  <body style="margin: 0; padding: 24px; background: #f1f5f9; font-family: Arial, Helvetica, sans-serif; color: #0f172a;">
-    <div style="max-width: 1180px; margin: 0 auto;">
-      <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-radius: 24px; padding: 28px 32px; margin-bottom: 24px;">
-        <div style="font-size: 34px; font-weight: 900; color: #ffffff; margin-bottom: 8px;">Tricel PageSpeed Report</div>
-        <div style="font-size: 14px; color: #cbd5e1;">
+  <body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial, Helvetica, sans-serif;color:#0f172a;">
+    <div style="max-width:1180px;margin:0 auto;">
+      <div style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);border-radius:24px;padding:28px 32px;margin-bottom:24px;">
+        <div style="font-size:34px;font-weight:900;color:#ffffff;margin-bottom:8px;">Tricel PageSpeed Report</div>
+        <div style="font-size:14px;color:#cbd5e1;">
           Generated ${htmlEscape(formatTimestamp(generatedAt, timeZone))} · MOBILE + DESKTOP
         </div>
       </div>
 
-      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; margin-bottom: 24px;">
-        <div style="font-size: 22px; font-weight: 800; color: #0f172a; margin-bottom: 16px;">Overview</div>
-        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 16px;">
-          <tr>
-            ${renderSummaryCards(report.summary)}
-          </tr>
+      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:24px;">
+        <div style="font-size:22px;font-weight:800;color:#0f172a;margin-bottom:16px;">Overview</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:16px;">
+          <tr>${renderSummaryCards(report.summary)}</tr>
         </table>
-        <div style="font-size: 15px; line-height: 1.7; color: #334155; white-space: pre-line;">${htmlEscape(overallSummaryText)}</div>
+        <div style="font-size:15px;line-height:1.7;color:#334155;white-space:pre-line;">${htmlEscape(overallSummaryText)}</div>
       </div>
 
       ${strategySections}
@@ -550,6 +552,75 @@ function buildSubject(report, generatedAt, timeZone) {
   return `${prefix} Report - ${strategyBlock.strategy.toUpperCase()} - ${date} - Avg ${buildAverageDisplay(strategyBlock.summary)}`;
 }
 
+function serializeSnapshot(report, generatedAt, timeZone) {
+  return {
+    generatedAt: generatedAt.toISOString(),
+    timeZone,
+    report
+  };
+}
+
+async function writeSnapshot(report, generatedAt, timeZone) {
+  const html = buildHtmlReport(report, generatedAt, timeZone);
+  const snapshot = serializeSnapshot(report, generatedAt, timeZone);
+
+  await fs.writeFile(REPORT_HTML_PATH, html, 'utf8');
+  await fs.writeFile(REPORT_DATA_PATH, JSON.stringify(snapshot, null, 2), 'utf8');
+
+  return {
+    htmlPath: REPORT_HTML_PATH,
+    dataPath: REPORT_DATA_PATH,
+    html
+  };
+}
+
+async function readSnapshot() {
+  const raw = await fs.readFile(REPORT_DATA_PATH, 'utf8');
+  const parsed = JSON.parse(raw);
+
+  return {
+    generatedAt: new Date(parsed.generatedAt),
+    timeZone: parsed.timeZone,
+    report: parsed.report
+  };
+}
+
+async function buildFreshReport(apiKey, timeZone, delayMs) {
+  const strategies = getEnv('REPORT_STRATEGIES', 'mobile,desktop')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (strategies.length === 0) {
+    throw new Error('REPORT_STRATEGIES must include at least one strategy');
+  }
+
+  for (const strategy of strategies) {
+    if (!['mobile', 'desktop'].includes(strategy)) {
+      throw new Error(`Unsupported strategy: ${strategy}`);
+    }
+  }
+
+  const generatedAt = new Date();
+  const strategyResults = [];
+
+  for (let index = 0; index < strategies.length; index += 1) {
+    const strategy = strategies[index];
+    const result = await collectStrategyResults(strategy, apiKey, delayMs);
+    strategyResults.push(result);
+
+    if (index < strategies.length - 1) {
+      await sleep(delayMs);
+    }
+  }
+
+  return {
+    generatedAt,
+    report: aggregateReport(strategyResults),
+    timeZone
+  };
+}
+
 async function sendEmail(report, generatedAt, timeZone, reportUrl) {
   const strategyBlock = getEmailStrategyBlock(report);
 
@@ -563,7 +634,7 @@ async function sendEmail(report, generatedAt, timeZone, reportUrl) {
       reply_to: getEnv('EMAIL_REPLY_TO', getRequiredEnv('EMAIL_TO')),
       from_name: getEnv('EMAIL_FROM_NAME', 'Tricel PageSpeed Reports'),
       generated_at: formatTimestamp(generatedAt, timeZone),
-      strategy_label: strategyBlock.strategy.toUpperCase(),
+      strategy_label: buildEmailStrategyLabel(report),
       overview_text: buildEmailOverviewText(report),
       avg_perf: buildAverageDisplay(strategyBlock.summary),
       good_count: String(strategyBlock.summary.good),
@@ -610,64 +681,52 @@ function aggregateReport(strategyResults) {
   };
 }
 
-async function writePreview(html) {
-  const outputPath = path.join(process.cwd(), 'report-preview.html');
-  await fs.writeFile(outputPath, html, 'utf8');
-  return outputPath;
-}
-
 async function main() {
-  const apiKey = getRequiredEnv('PAGESPEED_API_KEY');
   const timeZone = getEnv('TIMEZONE', 'Europe/Dublin');
-  const delayMs = getNumberEnv('REQUEST_DELAY_MS', 6000);
   const strictMode = getBooleanEnv('STRICT_MODE', false);
 
-  const strategies = getEnv('REPORT_STRATEGIES', 'mobile,desktop')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
+  if (SEND_ONLY) {
+    const snapshot = await readSnapshot();
+    const reportUrl = getRequiredEnv('REPORT_URL');
+    const text = buildTextReport(snapshot.report, snapshot.generatedAt, snapshot.timeZone, reportUrl);
 
-  if (strategies.length === 0) {
-    throw new Error('REPORT_STRATEGIES must include at least one strategy');
-  }
+    process.stdout.write(`${text}\n`);
 
-  for (const strategy of strategies) {
-    if (!['mobile', 'desktop'].includes(strategy)) {
-      throw new Error(`Unsupported strategy: ${strategy}`);
+    const result = await sendEmail(snapshot.report, snapshot.generatedAt, snapshot.timeZone, reportUrl);
+    process.stdout.write(`EmailJS response: ${result}\n`);
+
+    if (snapshot.report.summary.failed > 0 && strictMode) {
+      process.exitCode = 1;
     }
+
+    return;
   }
 
-  const generatedAt = new Date();
-  const strategyResults = [];
+  const apiKey = getRequiredEnv('PAGESPEED_API_KEY');
+  const delayMs = getNumberEnv('REQUEST_DELAY_MS', 6000);
+  const snapshot = await buildFreshReport(apiKey, timeZone, delayMs);
+  const written = await writeSnapshot(snapshot.report, snapshot.generatedAt, snapshot.timeZone);
 
-  for (let index = 0; index < strategies.length; index += 1) {
-    const strategy = strategies[index];
-    const result = await collectStrategyResults(strategy, apiKey, delayMs);
-    strategyResults.push(result);
+  process.stdout.write(`Preview written to ${written.htmlPath}\n`);
+  process.stdout.write(`Snapshot written to ${written.dataPath}\n`);
 
-    if (index < strategies.length - 1) {
-      await sleep(delayMs);
-    }
-  }
+  const text = buildTextReport(
+    snapshot.report,
+    snapshot.generatedAt,
+    snapshot.timeZone,
+    getEnv('REPORT_URL')
+  );
 
-  const report = aggregateReport(strategyResults);
-  const html = buildHtmlReport(report, generatedAt, timeZone);
-  const previewPath = await writePreview(html);
-  process.stdout.write(`Preview written to ${previewPath}\n`);
-
-  const reportUrl = getEnv('REPORT_URL');
-  const text = buildTextReport(report, generatedAt, timeZone, reportUrl);
-
-  if (DRY_RUN) {
+  if (DRY_RUN || BUILD_ONLY) {
     process.stdout.write(`${text}\n`);
     return;
   }
 
-  const liveReportUrl = getRequiredEnv('REPORT_URL');
-  const result = await sendEmail(report, generatedAt, timeZone, liveReportUrl);
+  const reportUrl = getRequiredEnv('REPORT_URL');
+  const result = await sendEmail(snapshot.report, snapshot.generatedAt, snapshot.timeZone, reportUrl);
   process.stdout.write(`EmailJS response: ${result}\n`);
 
-  if (report.summary.failed > 0 && strictMode) {
+  if (snapshot.report.summary.failed > 0 && strictMode) {
     process.exitCode = 1;
   }
 }
@@ -676,11 +735,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-
-// FILE: EmailJS-template.html
-
-// EMAILJS TEMPLATE FIELDS
-// Subject: {{subject}}
-// To Email: {{to_email}}
-// Reply To: {{reply_to}}
-// From Name: {{from_name}}
