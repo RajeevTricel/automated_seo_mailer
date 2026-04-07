@@ -344,10 +344,10 @@ function renderSummaryCards(summary) {
   return cards
     .map(
       (card) => `
-        <td style="padding: 0 6px 12px 6px;">
-          <div style="border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; background: #ffffff;">
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">${htmlEscape(card.label)}</div>
-            <div style="font-size: 24px; font-weight: 800; color: ${card.color};">${htmlEscape(card.value)}</div>
+        <td style="padding:0 6px 12px 6px;">
+          <div style="border:1px solid #e2e8f0;border-radius:14px;padding:14px;background:#ffffff;">
+            <div style="font-size:12px;color:#64748b;margin-bottom:8px;">${htmlEscape(card.label)}</div>
+            <div style="font-size:24px;font-weight:800;color:${card.color};">${htmlEscape(card.value)}</div>
           </div>
         </td>
       `
@@ -359,9 +359,9 @@ function renderScoreCell(score, shortLabel) {
   const color = scoreColor(score);
 
   return `
-    <td style="padding: 12px 10px; text-align: center; border-bottom: 1px solid #e2e8f0;">
-      <div style="font-weight: 800; color: ${color}; font-size: 16px;">${score}%</div>
-      <div style="font-size: 11px; color: #64748b;">${htmlEscape(shortLabel)}</div>
+    <td style="padding:12px 10px;text-align:center;border-bottom:1px solid #e2e8f0;">
+      <div style="font-weight:800;color:${color};font-size:16px;">${score}%</div>
+      <div style="font-size:11px;color:#64748b;">${htmlEscape(shortLabel)}</div>
     </td>
   `;
 }
@@ -370,10 +370,10 @@ function renderEntryRow(entry) {
   if (entry.error) {
     return `
       <tr>
-        <td style="padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a;">
+        <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#0f172a;">
           ${htmlEscape(entry.displayName)}
         </td>
-        <td colspan="5" style="padding: 12px 14px; border-bottom: 1px solid #e2e8f0; color: #dc2626; font-size: 13px;">
+        <td colspan="5" style="padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#dc2626;font-size:13px;">
           Failed: ${htmlEscape(entry.error)}
         </td>
       </tr>
@@ -382,14 +382,14 @@ function renderEntryRow(entry) {
 
   return `
     <tr>
-      <td style="padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a;">
+      <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#0f172a;">
         ${htmlEscape(entry.displayName)}
       </td>
       ${renderScoreCell(entry.scores.performance, 'Performance')}
       ${renderScoreCell(entry.scores.accessibility, 'Accessibility')}
       ${renderScoreCell(entry.scores.bestPractices, 'Best')}
       ${renderScoreCell(entry.scores.seo, 'SEO')}
-      <td style="padding: 12px 10px; text-align: center; border-bottom: 1px solid #e2e8f0; font-weight: 800; color: ${scoreColor(entry.scores.performance)};">
+      <td style="padding:12px 10px;text-align:center;border-bottom:1px solid #e2e8f0;font-weight:800;color:${scoreColor(entry.scores.performance)};">
         ${htmlEscape(scoreLabel(entry.scores.performance))}
       </td>
     </tr>
@@ -402,19 +402,19 @@ function buildStrategySections(report) {
       const groupSections = strategyBlock.groups
         .map(
           (group) => `
-            <div style="margin: 0 0 28px 0;">
-              <div style="font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; font-weight: 800; margin-bottom: 12px;">
+            <div style="margin:0 0 28px 0;">
+              <div style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;font-weight:800;margin-bottom:12px;">
                 ${htmlEscape(group.groupName)}
               </div>
-              <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse: collapse; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+              <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
                 <thead>
-                  <tr style="background: #f8fafc;">
-                    <th align="left" style="padding: 14px; color: #334155; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">Site</th>
-                    <th style="padding: 14px; color: #334155; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">Perf</th>
-                    <th style="padding: 14px; color: #334155; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">Acc</th>
-                    <th style="padding: 14px; color: #334155; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">Best</th>
-                    <th style="padding: 14px; color: #334155; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">SEO</th>
-                    <th style="padding: 14px; color: #334155; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;">Status</th>
+                  <tr style="background:#f8fafc;">
+                    <th align="left" style="padding:14px;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Site</th>
+                    <th style="padding:14px;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Perf</th>
+                    <th style="padding:14px;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Acc</th>
+                    <th style="padding:14px;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Best</th>
+                    <th style="padding:14px;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">SEO</th>
+                    <th style="padding:14px;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -427,11 +427,11 @@ function buildStrategySections(report) {
         .join('');
 
       return `
-        <section style="margin-bottom: 44px;">
-          <div style="display: inline-block; padding: 8px 12px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 18px;">
+        <section style="margin-bottom:44px;">
+          <div style="display:inline-block;padding:8px 12px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:18px;">
             ${htmlEscape(strategyBlock.strategy)}
           </div>
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 16px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:16px;">
             <tr>
               ${renderSummaryCards(strategyBlock.summary)}
             </tr>
@@ -540,15 +540,30 @@ function buildDesktopDetailHtml(report) {
 }
 
 function buildRefreshActionHtml() {
-  const refreshUrl = getEnv('REPORT_REFRESH_URL');
+  const triggerUrl = getEnv('REPORT_TRIGGER_URL');
+  const workflowUrl = getEnv('REPORT_REFRESH_URL');
 
-  if (!refreshUrl) {
+  if (!triggerUrl && !workflowUrl) {
     return '';
+  }
+
+  if (triggerUrl) {
+    return `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;align-items:center;">
+        <button id="refresh-report-btn" type="button" style="display:inline-block;background:#2563eb;color:#ffffff;border:none;padding:12px 18px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer;">
+          Run Fresh Check
+        </button>
+        <button id="clear-refresh-key-btn" type="button" style="display:inline-block;background:#0f172a;color:#ffffff;border:1px solid #334155;padding:12px 18px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer;">
+          Forget Key
+        </button>
+      </div>
+      <div id="refresh-report-status" style="margin-top:10px;font-size:13px;color:#cbd5e1;"></div>
+    `;
   }
 
   return `
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;">
-      <a href="${htmlEscape(refreshUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">
+      <a href="${htmlEscape(workflowUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">
         Run Fresh Check
       </a>
     </div>
@@ -556,6 +571,108 @@ function buildRefreshActionHtml() {
       Opens the workflow page so a new report can be generated safely.
     </div>
   `;
+}
+
+function buildRefreshScript() {
+  const triggerUrl = getEnv('REPORT_TRIGGER_URL');
+
+  if (!triggerUrl) {
+    return '';
+  }
+
+  return `
+<script>
+(function () {
+  const triggerUrl = ${JSON.stringify(triggerUrl)};
+  const storageKey = 'tricel-report-admin-key';
+  const button = document.getElementById('refresh-report-btn');
+  const clearButton = document.getElementById('clear-refresh-key-btn');
+  const statusNode = document.getElementById('refresh-report-status');
+
+  if (!button || !statusNode) {
+    return;
+  }
+
+  function setStatus(message, isSuccess) {
+    statusNode.textContent = message;
+    statusNode.style.color = isSuccess ? '#c7f9cc' : '#fecaca';
+  }
+
+  async function triggerWorkflow() {
+    let adminKey = window.localStorage.getItem(storageKey) || '';
+
+    if (!adminKey) {
+      adminKey = window.prompt('Enter refresh key');
+
+      if (!adminKey) {
+        setStatus('Refresh cancelled.', false);
+        return;
+      }
+
+      window.localStorage.setItem(storageKey, adminKey);
+    }
+
+    button.disabled = true;
+    button.textContent = 'Starting...';
+    setStatus('Queuing fresh check...', true);
+
+    try {
+      const response = await fetch(triggerUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-key': adminKey
+        },
+        body: JSON.stringify({})
+      });
+
+      let payload = null;
+
+      try {
+        payload = await response.json();
+      } catch (error) {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          window.localStorage.removeItem(storageKey);
+        }
+
+        throw new Error(
+          payload && payload.message
+            ? payload.message
+            : 'Failed to queue fresh check.'
+        );
+      }
+
+      setStatus(
+        payload && payload.message
+          ? payload.message + ' Open GitHub Actions to watch progress.'
+          : 'Fresh check queued successfully. Open GitHub Actions to watch progress.',
+        true
+      );
+    } catch (error) {
+      setStatus(error.message || 'Failed to queue fresh check.', false);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Run Fresh Check';
+    }
+  }
+
+  button.addEventListener('click', function () {
+    void triggerWorkflow();
+  });
+
+  if (clearButton) {
+    clearButton.addEventListener('click', function () {
+      window.localStorage.removeItem(storageKey);
+      setStatus('Saved refresh key removed.', true);
+    });
+  }
+})();
+</script>
+  `.trim();
 }
 
 function buildHtmlReport(report, generatedAt, timeZone) {
@@ -573,6 +690,7 @@ function buildHtmlReport(report, generatedAt, timeZone) {
   <head>
     <meta charset="utf-8" />
     <title>Tricel PageSpeed Report</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
   <body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial, Helvetica, sans-serif;color:#0f172a;">
     <div style="max-width:1180px;margin:0 auto;">
@@ -594,6 +712,7 @@ function buildHtmlReport(report, generatedAt, timeZone) {
 
       ${strategySections}
     </div>
+    ${buildRefreshScript()}
   </body>
 </html>
   `.trim();
@@ -696,7 +815,7 @@ async function buildFreshReport(apiKey, timeZone, delayMs) {
 
   for (let index = 0; index < strategies.length; index += 1) {
     const strategy = strategies[index];
-    const result = await collectStrategyResults(strategy, apiKey, delayMs);
+    const result = await collectStrategyResults(strategy, apiKey, strategy === strategies[strategies.length - 1] ? delayMs : delayMs);
     strategyResults.push(result);
 
     if (index < strategies.length - 1) {
