@@ -407,12 +407,15 @@ function buildStrategySections(report) {
 function buildAverageDisplay(summary) {
   return summary.averagePerformance == null ? 'N/A' : `${summary.averagePerformance}%`;
 }
-
 function getEmailStrategyBlock(report) {
   return (
     report.strategies.find((strategyBlock) => strategyBlock.strategy === 'desktop') ||
     report.strategies[0]
   );
+}
+
+function buildAverageDisplay(summary) {
+  return summary.averagePerformance == null ? 'N/A' : `${summary.averagePerformance}%`;
 }
 
 function buildEmailOverviewText(report) {
@@ -421,7 +424,7 @@ function buildEmailOverviewText(report) {
   return [
     `${strategyBlock.strategy.toUpperCase()} average performance: ${buildAverageDisplay(strategyBlock.summary)}.`,
     `Good: ${strategyBlock.summary.good}, Warning: ${strategyBlock.summary.warning}, Poor: ${strategyBlock.summary.poor}, Failed: ${strategyBlock.summary.failed}.`,
-    'Use the full report link below for complete MOBILE + DESKTOP analysis.'
+    'Open the full report link below for complete MOBILE + DESKTOP analysis.'
   ].join(' ');
 }
 
@@ -429,80 +432,75 @@ function buildEmailStrategyLabel(report) {
   return getEmailStrategyBlock(report).strategy.toUpperCase();
 }
 
-function renderDesktopSummaryLine(entry) {
+function renderDesktopDetailRow(entry) {
   if (entry.error) {
     return `
-      <div style="margin: 0 0 6px 0; font-family: Consolas, Monaco, 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: #334155;">
-        ${htmlEscape(entry.displayName)} | <span style="font-weight: 700; color: #dc2626;">FAILED</span>
-      </div>
+      <tr>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#0f172a;">
+          ${htmlEscape(entry.displayName)}
+        </td>
+        <td colspan="5" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#dc2626;font-weight:700;">
+          FAILED
+        </td>
+      </tr>
     `;
   }
 
-  const status = scoreLabel(entry.scores.performance);
-  const color = scoreColor(entry.scores.performance);
+  const perfColor = scoreColor(entry.scores.performance);
 
   return `
-    <div style="margin: 0 0 6px 0; font-family: Consolas, Monaco, 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: #334155;">
-      ${htmlEscape(entry.displayName)} | P: ${entry.scores.performance}% | A: ${entry.scores.accessibility}% | B: ${entry.scores.bestPractices}% | S: ${entry.scores.seo}% | <span style="font-weight: 700; color: ${color};">${htmlEscape(status)}</span>
-    </div>
+    <tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#0f172a;">
+        ${htmlEscape(entry.displayName)}
+      </td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;color:${perfColor};font-weight:700;">
+        ${entry.scores.performance}%
+      </td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">
+        ${entry.scores.accessibility}%
+      </td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">
+        ${entry.scores.bestPractices}%
+      </td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">
+        ${entry.scores.seo}%
+      </td>
+      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;color:${perfColor};font-weight:700;">
+        ${htmlEscape(scoreLabel(entry.scores.performance))}
+      </td>
+    </tr>
   `;
 }
 
-function buildDesktopSummaryHtml(report) {
+function buildDesktopDetailHtml(report) {
   const strategyBlock = getEmailStrategyBlock(report);
 
   return strategyBlock.groups
     .map(
       (group) => `
-        <div style="margin: 0 0 18px 0;">
-          <div style="margin: 0 0 8px 0; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #0f172a;">
-            [${htmlEscape(group.groupName)}]
+        <div style="margin:0 0 18px 0;">
+          <div style="margin:0 0 8px 0;font-size:13px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#0f172a;">
+            ${htmlEscape(group.groupName)}
           </div>
-          ${group.entries.map(renderDesktopSummaryLine).join('')}
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+            <thead>
+              <tr style="background:#f8fafc;">
+                <th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#475569;">Site</th>
+                <th style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#475569;">P</th>
+                <th style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#475569;">A</th>
+                <th style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#475569;">B</th>
+                <th style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#475569;">S</th>
+                <th style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#475569;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${group.entries.map(renderDesktopDetailRow).join('')}
+            </tbody>
+          </table>
         </div>
       `
     )
     .join('');
-}
-
-function buildHtmlReport(report, generatedAt, timeZone) {
-  const strategySections = buildStrategySections(report);
-  const overallSummaryText = report.strategies
-    .map(
-      (strategyBlock) =>
-        `${strategyBlock.strategy.toUpperCase()}: Avg ${buildAverageDisplay(strategyBlock.summary)}, Good ${strategyBlock.summary.good}, Warning ${strategyBlock.summary.warning}, Poor ${strategyBlock.summary.poor}, Failed ${strategyBlock.summary.failed}.`
-    )
-    .join('\n');
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Tricel PageSpeed Report</title>
-  </head>
-  <body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial, Helvetica, sans-serif;color:#0f172a;">
-    <div style="max-width:1180px;margin:0 auto;">
-      <div style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);border-radius:24px;padding:28px 32px;margin-bottom:24px;">
-        <div style="font-size:34px;font-weight:900;color:#ffffff;margin-bottom:8px;">Tricel PageSpeed Report</div>
-        <div style="font-size:14px;color:#cbd5e1;">
-          Generated ${htmlEscape(formatTimestamp(generatedAt, timeZone))} · MOBILE + DESKTOP
-        </div>
-      </div>
-
-      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:24px;">
-        <div style="font-size:22px;font-weight:800;color:#0f172a;margin-bottom:16px;">Overview</div>
-        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:16px;">
-          <tr>${renderSummaryCards(report.summary)}</tr>
-        </table>
-        <div style="font-size:15px;line-height:1.7;color:#334155;white-space:pre-line;">${htmlEscape(overallSummaryText)}</div>
-      </div>
-
-      ${strategySections}
-    </div>
-  </body>
-</html>
-  `.trim();
 }
 
 function buildTextReport(report, generatedAt, timeZone, reportUrl) {
@@ -552,75 +550,6 @@ function buildSubject(report, generatedAt, timeZone) {
   return `${prefix} Report - ${strategyBlock.strategy.toUpperCase()} - ${date} - Avg ${buildAverageDisplay(strategyBlock.summary)}`;
 }
 
-function serializeSnapshot(report, generatedAt, timeZone) {
-  return {
-    generatedAt: generatedAt.toISOString(),
-    timeZone,
-    report
-  };
-}
-
-async function writeSnapshot(report, generatedAt, timeZone) {
-  const html = buildHtmlReport(report, generatedAt, timeZone);
-  const snapshot = serializeSnapshot(report, generatedAt, timeZone);
-
-  await fs.writeFile(REPORT_HTML_PATH, html, 'utf8');
-  await fs.writeFile(REPORT_DATA_PATH, JSON.stringify(snapshot, null, 2), 'utf8');
-
-  return {
-    htmlPath: REPORT_HTML_PATH,
-    dataPath: REPORT_DATA_PATH,
-    html
-  };
-}
-
-async function readSnapshot() {
-  const raw = await fs.readFile(REPORT_DATA_PATH, 'utf8');
-  const parsed = JSON.parse(raw);
-
-  return {
-    generatedAt: new Date(parsed.generatedAt),
-    timeZone: parsed.timeZone,
-    report: parsed.report
-  };
-}
-
-async function buildFreshReport(apiKey, timeZone, delayMs) {
-  const strategies = getEnv('REPORT_STRATEGIES', 'mobile,desktop')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (strategies.length === 0) {
-    throw new Error('REPORT_STRATEGIES must include at least one strategy');
-  }
-
-  for (const strategy of strategies) {
-    if (!['mobile', 'desktop'].includes(strategy)) {
-      throw new Error(`Unsupported strategy: ${strategy}`);
-    }
-  }
-
-  const generatedAt = new Date();
-  const strategyResults = [];
-
-  for (let index = 0; index < strategies.length; index += 1) {
-    const strategy = strategies[index];
-    const result = await collectStrategyResults(strategy, apiKey, delayMs);
-    strategyResults.push(result);
-
-    if (index < strategies.length - 1) {
-      await sleep(delayMs);
-    }
-  }
-
-  return {
-    generatedAt,
-    report: aggregateReport(strategyResults),
-    timeZone
-  };
-}
-
 async function sendEmail(report, generatedAt, timeZone, reportUrl) {
   const strategyBlock = getEmailStrategyBlock(report);
 
@@ -641,7 +570,7 @@ async function sendEmail(report, generatedAt, timeZone, reportUrl) {
       warning_count: String(strategyBlock.summary.warning),
       poor_count: String(strategyBlock.summary.poor),
       failed_count: String(strategyBlock.summary.failed),
-      desktop_summary_html: buildDesktopSummaryHtml(report),
+      desktop_detail_html: buildDesktopDetailHtml(report),
       report_url: reportUrl
     }
   };
