@@ -42,6 +42,7 @@ jobs:
           REPORT_STRATEGIES: ${{ vars.REPORT_STRATEGIES }}
           REQUEST_DELAY_MS: ${{ vars.REQUEST_DELAY_MS }}
           TIMEZONE: Europe/Dublin
+          REPORT_REFRESH_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/daily-report.yml
 
       - name: Prepare Pages site
         run: |
