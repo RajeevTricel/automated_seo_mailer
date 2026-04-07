@@ -1,3 +1,4 @@
+// /index.js
 'use strict';
 
 require('dotenv').config();
@@ -407,15 +408,12 @@ function buildStrategySections(report) {
 function buildAverageDisplay(summary) {
   return summary.averagePerformance == null ? 'N/A' : `${summary.averagePerformance}%`;
 }
+
 function getEmailStrategyBlock(report) {
   return (
     report.strategies.find((strategyBlock) => strategyBlock.strategy === 'desktop') ||
     report.strategies[0]
   );
-}
-
-function buildAverageDisplay(summary) {
-  return summary.averagePerformance == null ? 'N/A' : `${summary.averagePerformance}%`;
 }
 
 function buildEmailOverviewText(report) {
@@ -503,6 +501,46 @@ function buildDesktopDetailHtml(report) {
     .join('');
 }
 
+function buildHtmlReport(report, generatedAt, timeZone) {
+  const strategySections = buildStrategySections(report);
+  const overallSummaryText = report.strategies
+    .map(
+      (strategyBlock) =>
+        `${strategyBlock.strategy.toUpperCase()}: Avg ${buildAverageDisplay(strategyBlock.summary)}, Good ${strategyBlock.summary.good}, Warning ${strategyBlock.summary.warning}, Poor ${strategyBlock.summary.poor}, Failed ${strategyBlock.summary.failed}.`
+    )
+    .join('\n');
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tricel PageSpeed Report</title>
+  </head>
+  <body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial, Helvetica, sans-serif;color:#0f172a;">
+    <div style="max-width:1180px;margin:0 auto;">
+      <div style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);border-radius:24px;padding:28px 32px;margin-bottom:24px;">
+        <div style="font-size:34px;font-weight:900;color:#ffffff;margin-bottom:8px;">Tricel PageSpeed Report</div>
+        <div style="font-size:14px;color:#cbd5e1;">
+          Generated ${htmlEscape(formatTimestamp(generatedAt, timeZone))} · MOBILE + DESKTOP
+        </div>
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:24px;">
+        <div style="font-size:22px;font-weight:800;color:#0f172a;margin-bottom:16px;">Overview</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:16px;">
+          <tr>${renderSummaryCards(report.summary)}</tr>
+        </table>
+        <div style="font-size:15px;line-height:1.7;color:#334155;white-space:pre-line;">${htmlEscape(overallSummaryText)}</div>
+      </div>
+
+      ${strategySections}
+    </div>
+  </body>
+</html>
+  `.trim();
+}
+
 function buildTextReport(report, generatedAt, timeZone, reportUrl) {
   const strategyBlock = getEmailStrategyBlock(report);
   const lines = [
@@ -548,6 +586,85 @@ function buildSubject(report, generatedAt, timeZone) {
   }).format(generatedAt);
 
   return `${prefix} Report - ${strategyBlock.strategy.toUpperCase()} - ${date} - Avg ${buildAverageDisplay(strategyBlock.summary)}`;
+}
+
+function aggregateReport(strategyResults) {
+  const allEntries = strategyResults.flatMap((strategyBlock) =>
+    strategyBlock.groups.flatMap((group) => group.entries)
+  );
+
+  return {
+    strategies: strategyResults,
+    summary: summarize(allEntries)
+  };
+}
+
+function serializeSnapshot(report, generatedAt, timeZone) {
+  return {
+    generatedAt: generatedAt.toISOString(),
+    timeZone,
+    report
+  };
+}
+
+async function writeSnapshot(report, generatedAt, timeZone) {
+  const html = buildHtmlReport(report, generatedAt, timeZone);
+  const snapshot = serializeSnapshot(report, generatedAt, timeZone);
+
+  await fs.writeFile(REPORT_HTML_PATH, html, 'utf8');
+  await fs.writeFile(REPORT_DATA_PATH, JSON.stringify(snapshot, null, 2), 'utf8');
+
+  return {
+    htmlPath: REPORT_HTML_PATH,
+    dataPath: REPORT_DATA_PATH
+  };
+}
+
+async function readSnapshot() {
+  const raw = await fs.readFile(REPORT_DATA_PATH, 'utf8');
+  const parsed = JSON.parse(raw);
+
+  return {
+    generatedAt: new Date(parsed.generatedAt),
+    timeZone: parsed.timeZone,
+    report: parsed.report
+  };
+}
+
+async function buildFreshReport(apiKey, timeZone, delayMs) {
+  const strategies = getEnv('REPORT_STRATEGIES', 'mobile,desktop')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (strategies.length === 0) {
+    throw new Error('REPORT_STRATEGIES must include at least one strategy');
+  }
+
+  for (const strategy of strategies) {
+    if (!['mobile', 'desktop'].includes(strategy)) {
+      throw new Error(`Unsupported strategy: ${strategy}`);
+    }
+  }
+
+  const generatedAt = new Date();
+  const strategyResults = [];
+
+  for (let index = 0; index < strategies.length; index += 1) {
+    const strategy = strategies[index];
+    const result = await collectStrategyResults(strategy, apiKey, delayMs);
+    strategyResults.push(result);
+
+    if (index < strategies.length - 1) {
+      await sleep(delayMs);
+    }
+  }
+
+  return {
+    generatedAt,
+    report: aggregateReport(strategyResults),
+    timeZone
+  };
 }
 
 async function sendEmail(report, generatedAt, timeZone, reportUrl) {
@@ -599,17 +716,6 @@ async function sendEmail(report, generatedAt, timeZone, reportUrl) {
   return responseText;
 }
 
-function aggregateReport(strategyResults) {
-  const allEntries = strategyResults.flatMap((strategyBlock) =>
-    strategyBlock.groups.flatMap((group) => group.entries)
-  );
-
-  return {
-    strategies: strategyResults,
-    summary: summarize(allEntries)
-  };
-}
-
 async function main() {
   const timeZone = getEnv('TIMEZONE', 'Europe/Dublin');
   const strictMode = getBooleanEnv('STRICT_MODE', false);
@@ -659,54 +765,8 @@ async function main() {
     process.exitCode = 1;
   }
 }
-function aggregateReport(strategyResults) {
-  const allEntries = strategyResults.flatMap((strategyBlock) =>
-    strategyBlock.groups.flatMap((group) => group.entries)
-  );
-
-  return {
-    strategies: strategyResults,
-    summary: summarize(allEntries)
-  };
-}
-
-async function buildFreshReport(apiKey, timeZone, delayMs) {
-  const strategies = getEnv('REPORT_STRATEGIES', 'mobile,desktop')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (strategies.length === 0) {
-    throw new Error('REPORT_STRATEGIES must include at least one strategy');
-  }
-
-  for (const strategy of strategies) {
-    if (!['mobile', 'desktop'].includes(strategy)) {
-      throw new Error(`Unsupported strategy: ${strategy}`);
-    }
-  }
-
-  const generatedAt = new Date();
-  const strategyResults = [];
-
-  for (let index = 0; index < strategies.length; index += 1) {
-    const strategy = strategies[index];
-    const result = await collectStrategyResults(strategy, apiKey, delayMs);
-    strategyResults.push(result);
-
-    if (index < strategies.length - 1) {
-      await sleep(delayMs);
-    }
-  }
-
-  return {
-    generatedAt,
-    report: aggregateReport(strategyResults),
-    timeZone
-  };
-}
 
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
-});
+}); done now so can u see if this is ok and give the complete script if any changes are needed.
