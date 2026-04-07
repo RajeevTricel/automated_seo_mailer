@@ -2,7 +2,7 @@
   "name": "automated-seo-mailer",
   "version": "1.0.0",
   "private": true,
-  "description": "Automated Tricel PageSpeed reporting with Node.js, EmailJS, GitHub Pages, and GitHub Actions.",
+  "description": "Automated Tricel PageSpeed reporting with Node.js, EmailJS, GitHub Pages, GitHub Actions, and a secure refresh trigger.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
