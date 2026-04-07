@@ -678,50 +678,6 @@ main().catch((error) => {
 });
 
 // FILE: EmailJS-template.html
-<!DOCTYPE html>
-<html lang="en">
-  <body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
-    <div style="max-width:920px;margin:0 auto;">
-      <div style="background:#0f172a;border-radius:20px;padding:28px 32px;margin-bottom:24px;">
-        <h1 style="margin:0 0 8px 0;font-size:30px;color:#ffffff;">Tricel PageSpeed Report</h1>
-        <p style="margin:0;color:#cbd5e1;font-size:14px;">{{generated_at}} · {{strategy_label}}</p>
-      </div>
-
-      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:24px;">
-        <h2 style="margin:0 0 16px 0;font-size:22px;">Overview</h2>
-        <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">{{overview_text}}</p>
-
-        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;">
-          <tr>
-            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Average</div><div style="font-size:24px;font-weight:800;color:#2563eb;">{{avg_perf}}</div></div></td>
-            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Good</div><div style="font-size:24px;font-weight:800;color:#16a34a;">{{good_count}}</div></div></td>
-            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Warning</div><div style="font-size:24px;font-weight:800;color:#d97706;">{{warning_count}}</div></div></td>
-            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Poor</div><div style="font-size:24px;font-weight:800;color:#dc2626;">{{poor_count}}</div></div></td>
-            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Failed</div><div style="font-size:24px;font-weight:800;color:#64748b;">{{failed_count}}</div></div></td>
-          </tr>
-        </table>
-      </div>
-
-      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:24px;">
-        <h2 style="margin:0 0 16px 0;font-size:22px;">Desktop Summary</h2>
-        {{{desktop_summary_html}}}
-      </div>
-
-      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;">
-        <h2 style="margin:0 0 12px 0;font-size:22px;">Full HTML Report</h2>
-        <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">
-          Open the full analysis here. This page includes both MOBILE and DESKTOP.
-        </p>
-        <p style="margin:0;">
-          <a href="{{report_url}}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">
-            Open Full Analysis
-          </a>
-        </p>
-        <p style="margin:14px 0 0 0;font-size:13px;color:#64748b;word-break:break-all;">{{report_url}}</p>
-      </div>
-    </div>
-  </body>
-</html>
 
 // EMAILJS TEMPLATE FIELDS
 // Subject: {{subject}}
