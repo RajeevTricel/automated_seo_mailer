@@ -400,6 +400,43 @@ function buildStrategySections(report) {
     .join('');
 }
 
+function buildCompactRows(report) {
+  const rows = [];
+
+  for (const strategyBlock of report.strategies) {
+    for (const group of strategyBlock.groups) {
+      for (const entry of group.entries) {
+        if (entry.error) {
+          rows.push(`
+            <tr>
+              <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(strategyBlock.strategy.toUpperCase())}</td>
+              <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(group.groupName)}</td>
+              <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(entry.displayName)}</td>
+              <td colspan="5" style="padding:8px;border-bottom:1px solid #e2e8f0;color:#dc2626;">FAILED</td>
+            </tr>
+          `);
+          continue;
+        }
+
+        rows.push(`
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(strategyBlock.strategy.toUpperCase())}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(group.groupName)}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(entry.displayName)}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${scoreColor(entry.scores.performance)};">${entry.scores.performance}%</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;">${entry.scores.accessibility}%</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;">${entry.scores.bestPractices}%</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;">${entry.scores.seo}%</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${scoreColor(entry.scores.performance)};">${htmlEscape(scoreLabel(entry.scores.performance))}</td>
+          </tr>
+        `);
+      }
+    }
+  }
+
+  return rows.join('');
+}
+
 function buildOverviewText(report) {
   const lines = [];
   const overallAverage =
@@ -434,7 +471,28 @@ function buildAverageDisplay(summary) {
 }
 
 function buildEmailDetailHtml(report) {
-  return buildStrategySections(report);
+  return `
+    <div style="font-size:14px;color:#334155;margin-bottom:14px;">
+      Full report summary for all monitored sites:
+    </div>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#ffffff;border:1px solid #e2e8f0;">
+      <thead>
+        <tr style="background:#f8fafc;">
+          <th align="left" style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Strategy</th>
+          <th align="left" style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Group</th>
+          <th align="left" style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Site</th>
+          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Perf</th>
+          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Acc</th>
+          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Best</th>
+          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">SEO</th>
+          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${buildCompactRows(report)}
+      </tbody>
+    </table>
+  `.trim();
 }
 
 function buildHtmlReport(report, generatedAt, timeZone) {
