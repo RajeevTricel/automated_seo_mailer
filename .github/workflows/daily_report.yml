@@ -1,4 +1,3 @@
-# .github/workflows/daily-report.yml
 name: Daily PageSpeed Report
 
 on:
@@ -7,6 +6,11 @@ on:
     - cron: "0 8 * * *"
       timezone: "Europe/Dublin"
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 concurrency:
   group: daily-pagespeed-report
   cancel-in-progress: false
@@ -14,6 +18,9 @@ concurrency:
 jobs:
   send-report:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Check out repository
@@ -28,7 +35,34 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Generate report and send via EmailJS
+      - name: Build full HTML report
+        run: npm run dry-run
+        env:
+          PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
+          REPORT_STRATEGIES: ${{ vars.REPORT_STRATEGIES }}
+          REQUEST_DELAY_MS: ${{ vars.REQUEST_DELAY_MS }}
+          SUBJECT_PREFIX: ${{ vars.SUBJECT_PREFIX }}
+          EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
+          TIMEZONE: Europe/Dublin
+
+      - name: Prepare Pages site
+        run: |
+          mkdir -p site
+          cp report-preview.html site/index.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Send overview email via EmailJS
         run: npm run report
         env:
           PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
@@ -43,4 +77,5 @@ jobs:
           SUBJECT_PREFIX: ${{ vars.SUBJECT_PREFIX }}
           EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
           TIMEZONE: Europe/Dublin
+          REPORT_URL: ${{ steps.deployment.outputs.page_url }}
           STRICT_MODE: "false"
