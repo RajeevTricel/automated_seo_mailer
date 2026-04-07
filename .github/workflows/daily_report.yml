@@ -74,8 +74,3 @@ jobs:
           TIMEZONE: Europe/Dublin
           REPORT_URL: ${{ steps.deployment.outputs.page_url }}
           STRICT_MODE: "false"
-          SUBJECT_PREFIX: ${{ vars.SUBJECT_PREFIX }}
-          EMAIL_FROM_NAME: ${{ vars.EMAIL_FROM_NAME }}
-          TIMEZONE: Europe/Dublin
-          REPORT_URL: ${{ steps.deployment.outputs.page_url }}
-          STRICT_MODE: "false"
