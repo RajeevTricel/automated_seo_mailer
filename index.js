@@ -1,4 +1,4 @@
-// /index.js
+// FILE: index.js
 'use strict';
 
 require('dotenv').config();
@@ -97,14 +97,14 @@ function scoreColor(score) {
 
 function scoreLabel(score) {
   if (score >= 90) {
-    return 'Good';
+    return 'GOOD';
   }
 
   if (score >= 70) {
-    return 'Warning';
+    return 'WARNING';
   }
 
-  return 'Poor';
+  return 'POOR';
 }
 
 function summarize(entries) {
@@ -400,104 +400,75 @@ function buildStrategySections(report) {
     .join('');
 }
 
-function buildCompactRows(report) {
-  const rows = [];
-
-  for (const strategyBlock of report.strategies) {
-    for (const group of strategyBlock.groups) {
-      for (const entry of group.entries) {
-        if (entry.error) {
-          rows.push(`
-            <tr>
-              <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(strategyBlock.strategy.toUpperCase())}</td>
-              <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(group.groupName)}</td>
-              <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(entry.displayName)}</td>
-              <td colspan="5" style="padding:8px;border-bottom:1px solid #e2e8f0;color:#dc2626;">FAILED</td>
-            </tr>
-          `);
-          continue;
-        }
-
-        rows.push(`
-          <tr>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(strategyBlock.strategy.toUpperCase())}</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(group.groupName)}</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${htmlEscape(entry.displayName)}</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${scoreColor(entry.scores.performance)};">${entry.scores.performance}%</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;">${entry.scores.accessibility}%</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;">${entry.scores.bestPractices}%</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;">${entry.scores.seo}%</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${scoreColor(entry.scores.performance)};">${htmlEscape(scoreLabel(entry.scores.performance))}</td>
-          </tr>
-        `);
-      }
-    }
-  }
-
-  return rows.join('');
-}
-
-function buildOverviewText(report) {
-  const lines = [];
-  const overallAverage =
-    report.summary.averagePerformance == null ? 'N/A' : `${report.summary.averagePerformance}%`;
-
-  lines.push(
-    `Overall average performance: ${overallAverage}. Good: ${report.summary.good}, Warning: ${report.summary.warning}, Poor: ${report.summary.poor}, Failed: ${report.summary.failed}.`
-  );
-
-  for (const strategyBlock of report.strategies) {
-    const average =
-      strategyBlock.summary.averagePerformance == null
-        ? 'N/A'
-        : `${strategyBlock.summary.averagePerformance}%`;
-
-    lines.push(
-      `${strategyBlock.strategy.toUpperCase()}: Avg ${average}, Good ${strategyBlock.summary.good}, Warning ${strategyBlock.summary.warning}, Poor ${strategyBlock.summary.poor}, Failed ${strategyBlock.summary.failed}.`
-    );
-  }
-
-  return lines.join('\n');
-}
-
-function buildStrategyLabel(report) {
-  return report.strategies
-    .map((strategyBlock) => strategyBlock.strategy.toUpperCase())
-    .join(' + ');
-}
-
 function buildAverageDisplay(summary) {
   return summary.averagePerformance == null ? 'N/A' : `${summary.averagePerformance}%`;
 }
 
-function buildEmailDetailHtml(report) {
+function getEmailStrategyBlock(report) {
+  return (
+    report.strategies.find((strategyBlock) => strategyBlock.strategy === 'desktop') ||
+    report.strategies[0]
+  );
+}
+
+function buildEmailOverviewText(report) {
+  const strategyBlock = getEmailStrategyBlock(report);
+
+  return [
+    `${strategyBlock.strategy.toUpperCase()} average performance: ${buildAverageDisplay(strategyBlock.summary)}.`,
+    `Good: ${strategyBlock.summary.good}, Warning: ${strategyBlock.summary.warning}, Poor: ${strategyBlock.summary.poor}, Failed: ${strategyBlock.summary.failed}.`,
+    'Full HTML report below includes both MOBILE and DESKTOP analysis via the link.'
+  ].join(' ');
+}
+
+function buildEmailStrategyLabel(report) {
+  return getEmailStrategyBlock(report).strategy.toUpperCase();
+}
+
+function renderDesktopSummaryLine(entry) {
+  if (entry.error) {
+    return `
+      <div style="margin: 0 0 6px 0; font-family: Consolas, Monaco, 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: #334155;">
+        ${htmlEscape(entry.displayName)} | <span style="font-weight: 700; color: #dc2626;">FAILED</span>
+      </div>
+    `;
+  }
+
+  const status = scoreLabel(entry.scores.performance);
+  const color = scoreColor(entry.scores.performance);
+
   return `
-    <div style="font-size:14px;color:#334155;margin-bottom:14px;">
-      Full report summary for all monitored sites:
+    <div style="margin: 0 0 6px 0; font-family: Consolas, Monaco, 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: #334155;">
+      ${htmlEscape(entry.displayName)} | P: ${entry.scores.performance}% | A: ${entry.scores.accessibility}% | B: ${entry.scores.bestPractices}% | S: ${entry.scores.seo}% | <span style="font-weight: 700; color: ${color};">${htmlEscape(status)}</span>
     </div>
-    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#ffffff;border:1px solid #e2e8f0;">
-      <thead>
-        <tr style="background:#f8fafc;">
-          <th align="left" style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Strategy</th>
-          <th align="left" style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Group</th>
-          <th align="left" style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Site</th>
-          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Perf</th>
-          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Acc</th>
-          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Best</th>
-          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">SEO</th>
-          <th style="padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px;">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${buildCompactRows(report)}
-      </tbody>
-    </table>
-  `.trim();
+  `;
+}
+
+function buildDesktopSummaryHtml(report) {
+  const strategyBlock = getEmailStrategyBlock(report);
+
+  return strategyBlock.groups
+    .map(
+      (group) => `
+        <div style="margin: 0 0 18px 0;">
+          <div style="margin: 0 0 8px 0; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #0f172a;">
+            [${htmlEscape(group.groupName)}]
+          </div>
+          ${group.entries.map(renderDesktopSummaryLine).join('')}
+        </div>
+      `
+    )
+    .join('');
 }
 
 function buildHtmlReport(report, generatedAt, timeZone) {
-  const overviewText = buildOverviewText(report);
   const strategySections = buildStrategySections(report);
+  const overallSummaryText = report.strategies
+    .map(
+      (strategyBlock) =>
+        `${strategyBlock.strategy.toUpperCase()}: Avg ${buildAverageDisplay(strategyBlock.summary)}, Good ${strategyBlock.summary.good}, Warning ${strategyBlock.summary.warning}, Poor ${strategyBlock.summary.poor}, Failed ${strategyBlock.summary.failed}.`
+    )
+    .join('\n');
 
   return `
 <!DOCTYPE html>
@@ -511,7 +482,7 @@ function buildHtmlReport(report, generatedAt, timeZone) {
       <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-radius: 24px; padding: 28px 32px; margin-bottom: 24px;">
         <div style="font-size: 34px; font-weight: 900; color: #ffffff; margin-bottom: 8px;">Tricel PageSpeed Report</div>
         <div style="font-size: 14px; color: #cbd5e1;">
-          Generated ${htmlEscape(formatTimestamp(generatedAt, timeZone))} · Time zone ${htmlEscape(timeZone)}
+          Generated ${htmlEscape(formatTimestamp(generatedAt, timeZone))} · MOBILE + DESKTOP
         </div>
       </div>
 
@@ -522,9 +493,7 @@ function buildHtmlReport(report, generatedAt, timeZone) {
             ${renderSummaryCards(report.summary)}
           </tr>
         </table>
-        <div style="font-size: 15px; line-height: 1.7; color: #334155; white-space: pre-line;">
-          ${htmlEscape(overviewText)}
-        </div>
+        <div style="font-size: 15px; line-height: 1.7; color: #334155; white-space: pre-line;">${htmlEscape(overallSummaryText)}</div>
       </div>
 
       ${strategySections}
@@ -534,44 +503,35 @@ function buildHtmlReport(report, generatedAt, timeZone) {
   `.trim();
 }
 
-function buildTextReport(report, generatedAt, timeZone) {
+function buildTextReport(report, generatedAt, timeZone, reportUrl) {
+  const strategyBlock = getEmailStrategyBlock(report);
   const lines = [
-    'TRICEL PAGESPEED REPORT',
+    `TRICEL PAGESPEED REPORT - ${strategyBlock.strategy.toUpperCase()}`,
     `Generated: ${formatTimestamp(generatedAt, timeZone)}`,
-    `Timezone: ${timeZone}`,
     '',
-    buildOverviewText(report),
+    buildEmailOverviewText(report),
     ''
   ];
 
-  for (const strategyBlock of report.strategies) {
-    lines.push(`[${strategyBlock.strategy.toUpperCase()}]`);
-    lines.push(`Average Performance: ${buildAverageDisplay(strategyBlock.summary)}`);
-    lines.push(
-      `Good: ${strategyBlock.summary.good} | Warning: ${strategyBlock.summary.warning} | Poor: ${strategyBlock.summary.poor} | Failed: ${strategyBlock.summary.failed}`
-    );
-    lines.push('');
+  for (const group of strategyBlock.groups) {
+    lines.push(`[${group.groupName.toUpperCase()}]`);
 
-    for (const group of strategyBlock.groups) {
-      lines.push(`  ${group.groupName}`);
-
-      for (const entry of group.entries) {
-        if (entry.error) {
-          lines.push(`    - ${entry.displayName}: FAILED (${entry.error})`);
-          continue;
-        }
-
-        const { performance, accessibility, bestPractices, seo } = entry.scores;
-
-        lines.push(
-          `    - ${entry.displayName}: P ${performance}% | A ${accessibility}% | B ${bestPractices}% | S ${seo}% | ${scoreLabel(performance)}`
-        );
+    for (const entry of group.entries) {
+      if (entry.error) {
+        lines.push(`${entry.displayName} | FAILED`);
+        continue;
       }
 
-      lines.push('');
+      lines.push(
+        `${entry.displayName} | P: ${entry.scores.performance}% | A: ${entry.scores.accessibility}% | B: ${entry.scores.bestPractices}% | S: ${entry.scores.seo}% | ${scoreLabel(entry.scores.performance)}`
+      );
     }
 
     lines.push('');
+  }
+
+  if (reportUrl) {
+    lines.push(`Full report: ${reportUrl}`);
   }
 
   return lines.join('\n').trim();
@@ -579,6 +539,7 @@ function buildTextReport(report, generatedAt, timeZone) {
 
 function buildSubject(report, generatedAt, timeZone) {
   const prefix = getEnv('SUBJECT_PREFIX', 'Tricel PageSpeed');
+  const strategyBlock = getEmailStrategyBlock(report);
   const date = new Intl.DateTimeFormat('en-IE', {
     year: 'numeric',
     month: '2-digit',
@@ -586,10 +547,12 @@ function buildSubject(report, generatedAt, timeZone) {
     timeZone
   }).format(generatedAt);
 
-  return `${prefix} Report - ${date} - Avg ${buildAverageDisplay(report.summary)}`;
+  return `${prefix} Report - ${strategyBlock.strategy.toUpperCase()} - ${date} - Avg ${buildAverageDisplay(strategyBlock.summary)}`;
 }
 
-async function sendEmail(report, generatedAt, timeZone, text) {
+async function sendEmail(report, generatedAt, timeZone, reportUrl) {
+  const strategyBlock = getEmailStrategyBlock(report);
+
   const payload = {
     service_id: getRequiredEnv('EMAILJS_SERVICE_ID'),
     template_id: getRequiredEnv('EMAILJS_TEMPLATE_ID'),
@@ -600,15 +563,15 @@ async function sendEmail(report, generatedAt, timeZone, text) {
       reply_to: getEnv('EMAIL_REPLY_TO', getRequiredEnv('EMAIL_TO')),
       from_name: getEnv('EMAIL_FROM_NAME', 'Tricel PageSpeed Reports'),
       generated_at: formatTimestamp(generatedAt, timeZone),
-      strategy_label: buildStrategyLabel(report),
-      overview_text: buildOverviewText(report),
-      avg_perf: buildAverageDisplay(report.summary),
-      good_count: String(report.summary.good),
-      warning_count: String(report.summary.warning),
-      poor_count: String(report.summary.poor),
-      failed_count: String(report.summary.failed),
-      email_html: buildEmailDetailHtml(report),
-      text_report: text
+      strategy_label: strategyBlock.strategy.toUpperCase(),
+      overview_text: buildEmailOverviewText(report),
+      avg_perf: buildAverageDisplay(strategyBlock.summary),
+      good_count: String(strategyBlock.summary.good),
+      warning_count: String(strategyBlock.summary.warning),
+      poor_count: String(strategyBlock.summary.poor),
+      failed_count: String(strategyBlock.summary.failed),
+      desktop_summary_html: buildDesktopSummaryHtml(report),
+      report_url: reportUrl
     }
   };
 
@@ -689,16 +652,19 @@ async function main() {
 
   const report = aggregateReport(strategyResults);
   const html = buildHtmlReport(report, generatedAt, timeZone);
-  const text = buildTextReport(report, generatedAt, timeZone);
+  const previewPath = await writePreview(html);
+  process.stdout.write(`Preview written to ${previewPath}\n`);
+
+  const reportUrl = getEnv('REPORT_URL');
+  const text = buildTextReport(report, generatedAt, timeZone, reportUrl);
 
   if (DRY_RUN) {
-    const previewPath = await writePreview(html);
-    process.stdout.write(`Preview written to ${previewPath}\n`);
     process.stdout.write(`${text}\n`);
     return;
   }
 
-  const result = await sendEmail(report, generatedAt, timeZone, text);
+  const liveReportUrl = getRequiredEnv('REPORT_URL');
+  const result = await sendEmail(report, generatedAt, timeZone, liveReportUrl);
   process.stdout.write(`EmailJS response: ${result}\n`);
 
   if (report.summary.failed > 0 && strictMode) {
@@ -710,3 +676,55 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+// FILE: EmailJS-template.html
+<!DOCTYPE html>
+<html lang="en">
+  <body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <div style="max-width:920px;margin:0 auto;">
+      <div style="background:#0f172a;border-radius:20px;padding:28px 32px;margin-bottom:24px;">
+        <h1 style="margin:0 0 8px 0;font-size:30px;color:#ffffff;">Tricel PageSpeed Report</h1>
+        <p style="margin:0;color:#cbd5e1;font-size:14px;">{{generated_at}} · {{strategy_label}}</p>
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:24px;">
+        <h2 style="margin:0 0 16px 0;font-size:22px;">Overview</h2>
+        <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">{{overview_text}}</p>
+
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;">
+          <tr>
+            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Average</div><div style="font-size:24px;font-weight:800;color:#2563eb;">{{avg_perf}}</div></div></td>
+            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Good</div><div style="font-size:24px;font-weight:800;color:#16a34a;">{{good_count}}</div></div></td>
+            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Warning</div><div style="font-size:24px;font-weight:800;color:#d97706;">{{warning_count}}</div></div></td>
+            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Poor</div><div style="font-size:24px;font-weight:800;color:#dc2626;">{{poor_count}}</div></div></td>
+            <td style="padding:8px;"><div style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;"><div style="font-size:12px;color:#64748b;">Failed</div><div style="font-size:24px;font-weight:800;color:#64748b;">{{failed_count}}</div></div></td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-bottom:24px;">
+        <h2 style="margin:0 0 16px 0;font-size:22px;">Desktop Summary</h2>
+        {{{desktop_summary_html}}}
+      </div>
+
+      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;">
+        <h2 style="margin:0 0 12px 0;font-size:22px;">Full HTML Report</h2>
+        <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">
+          Open the full analysis here. This page includes both MOBILE and DESKTOP.
+        </p>
+        <p style="margin:0;">
+          <a href="{{report_url}}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">
+            Open Full Analysis
+          </a>
+        </p>
+        <p style="margin:14px 0 0 0;font-size:13px;color:#64748b;word-break:break-all;">{{report_url}}</p>
+      </div>
+    </div>
+  </body>
+</html>
+
+// EMAILJS TEMPLATE FIELDS
+// Subject: {{subject}}
+// To Email: {{to_email}}
+// Reply To: {{reply_to}}
+// From Name: {{from_name}}
