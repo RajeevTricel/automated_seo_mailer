@@ -87,6 +87,24 @@ function formatTimestamp(date, timeZone) {
   }).format(date);
 }
 
+function formatDateForSubject(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone
+  })
+    .formatToParts(date)
+    .reduce((accumulator, part) => {
+      if (part.type !== 'literal') {
+        accumulator[part.type] = part.value;
+      }
+      return accumulator;
+    }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function scoreColor(score) {
   if (score >= 90) {
     return '#16a34a';
@@ -542,10 +560,23 @@ function buildDesktopDetailHtml(report) {
 function buildRefreshActionHtml() {
   const triggerUrl = getEnv('REPORT_TRIGGER_URL');
   const workflowUrl = getEnv('REPORT_REFRESH_URL');
+  const accessContact = getEnv('REPORT_ACCESS_CONTACT');
 
   if (!triggerUrl && !workflowUrl) {
     return '';
   }
+
+  const requestButton = accessContact
+    ? `
+      <a href="mailto:${htmlEscape(accessContact)}?subject=${encodeURIComponent('Request access key for Tricel PageSpeed Report')}" style="display:inline-block;background:#0f172a;color:#ffffff;border:1px solid #334155;padding:12px 18px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer;text-decoration:none;">
+        Request Access Key
+      </a>
+    `
+    : `
+      <button id="request-access-key-btn" type="button" style="display:inline-block;background:#0f172a;color:#ffffff;border:1px solid #334155;padding:12px 18px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer;">
+        Request Access Key
+      </button>
+    `;
 
   if (triggerUrl) {
     return `
@@ -553,9 +584,7 @@ function buildRefreshActionHtml() {
         <button id="refresh-report-btn" type="button" style="display:inline-block;background:#2563eb;color:#ffffff;border:none;padding:12px 18px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer;">
           Run Fresh Check
         </button>
-        <button id="clear-refresh-key-btn" type="button" style="display:inline-block;background:#0f172a;color:#ffffff;border:1px solid #334155;padding:12px 18px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer;">
-          Forget Key
-        </button>
+        ${requestButton}
       </div>
       <div id="refresh-report-status" style="margin-top:10px;font-size:13px;color:#cbd5e1;"></div>
     `;
@@ -566,8 +595,9 @@ function buildRefreshActionHtml() {
       <a href="${htmlEscape(workflowUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700;">
         Run Fresh Check
       </a>
+      ${requestButton}
     </div>
-    <div style="margin-top:10px;font-size:13px;color:#cbd5e1;">
+    <div id="refresh-report-status" style="margin-top:10px;font-size:13px;color:#cbd5e1;">
       Opens the workflow page so a new report can be generated safely.
     </div>
   `;
@@ -575,34 +605,45 @@ function buildRefreshActionHtml() {
 
 function buildRefreshScript() {
   const triggerUrl = getEnv('REPORT_TRIGGER_URL');
-
-  if (!triggerUrl) {
-    return '';
-  }
+  const accessContact = getEnv('REPORT_ACCESS_CONTACT');
 
   return `
 <script>
 (function () {
   const triggerUrl = ${JSON.stringify(triggerUrl)};
+  const accessContact = ${JSON.stringify(accessContact)};
   const storageKey = 'tricel-report-admin-key';
   const button = document.getElementById('refresh-report-btn');
-  const clearButton = document.getElementById('clear-refresh-key-btn');
+  const requestButton = document.getElementById('request-access-key-btn');
   const statusNode = document.getElementById('refresh-report-status');
 
-  if (!button || !statusNode) {
-    return;
-  }
-
   function setStatus(message, isSuccess) {
+    if (!statusNode) {
+      return;
+    }
+
     statusNode.textContent = message;
     statusNode.style.color = isSuccess ? '#c7f9cc' : '#fecaca';
+  }
+
+  if (requestButton) {
+    requestButton.addEventListener('click', function () {
+      const message = accessContact
+        ? 'Use the button above to request an access key.'
+        : 'Contact the report owner to request an access key.';
+      setStatus(message, true);
+    });
+  }
+
+  if (!button || !triggerUrl) {
+    return;
   }
 
   async function triggerWorkflow() {
     let adminKey = window.localStorage.getItem(storageKey) || '';
 
     if (!adminKey) {
-      adminKey = window.prompt('Enter refresh key');
+      adminKey = window.prompt('Enter access key');
 
       if (!adminKey) {
         setStatus('Refresh cancelled.', false);
@@ -648,8 +689,8 @@ function buildRefreshScript() {
 
       setStatus(
         payload && payload.message
-          ? payload.message + ' Open GitHub Actions to watch progress.'
-          : 'Fresh check queued successfully. Open GitHub Actions to watch progress.',
+          ? payload.message
+          : 'Fresh check queued successfully. Email skipped for this refresh.',
         true
       );
     } catch (error) {
@@ -663,13 +704,6 @@ function buildRefreshScript() {
   button.addEventListener('click', function () {
     void triggerWorkflow();
   });
-
-  if (clearButton) {
-    clearButton.addEventListener('click', function () {
-      window.localStorage.removeItem(storageKey);
-      setStatus('Saved refresh key removed.', true);
-    });
-  }
 })();
 </script>
   `.trim();
@@ -755,12 +789,7 @@ function buildTextReport(report, generatedAt, timeZone, reportUrl) {
 function buildSubject(report, generatedAt, timeZone) {
   const prefix = getEnv('SUBJECT_PREFIX', 'Tricel PageSpeed');
   const strategyBlock = getEmailStrategyBlock(report);
-  const date = new Intl.DateTimeFormat('en-IE', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone
-  }).format(generatedAt);
+  const date = formatDateForSubject(generatedAt, timeZone);
 
   return `${prefix} Report - ${strategyBlock.strategy.toUpperCase()} - ${date} - Avg ${buildAverageDisplay(strategyBlock.summary)}`;
 }
