@@ -47,12 +47,24 @@ export default {
           'X-GitHub-Api-Version': '2022-11-28',
           'User-Agent': 'tricel-report-trigger'
         },
-        body: JSON.stringify({ ref })
+        body: JSON.stringify({
+          ref,
+          inputs: {
+            send_email: 'false'
+          }
+        })
       }
     );
 
     if (githubResponse.status === 204) {
-      return json({ ok: true, message: 'Fresh check queued successfully.' }, 200, corsHeaders);
+      return json(
+        {
+          ok: true,
+          message: 'Fresh check queued successfully. Email will be skipped for this refresh.'
+        },
+        200,
+        corsHeaders
+      );
     }
 
     const errorText = await githubResponse.text();
@@ -67,9 +79,10 @@ export default {
 
 function buildCorsHeaders(request, env) {
   const origin = request.headers.get('Origin') || '';
-  const allowOrigin = env.ALLOWED_ORIGIN && origin === env.ALLOWED_ORIGIN
-    ? origin
-    : env.ALLOWED_ORIGIN || '*';
+  const allowOrigin =
+    env.ALLOWED_ORIGIN && origin === env.ALLOWED_ORIGIN
+      ? origin
+      : env.ALLOWED_ORIGIN || '*';
 
   return {
     'Access-Control-Allow-Origin': allowOrigin,
