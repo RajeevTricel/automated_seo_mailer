@@ -1,12 +1,28 @@
 {
   "name": "tricel-report-trigger",
   "main": "src/index.js",
-  "compatibility_date": "2026-04-07",
+  "compatibility_date": "2026-04-08",
   "vars": {
     "GITHUB_OWNER": "RajeevTricel",
     "GITHUB_REPO": "automated_seo_mailer",
     "GITHUB_WORKFLOW_ID": "daily_report.yml",
     "GITHUB_REF": "main",
-    "ALLOWED_ORIGIN": "https://pagespeed.tricel.eu"
-  }
+    "ALLOWED_ORIGIN": "https://pagespeed.tricel.eu",
+    "INGEST_RETENTION_RUNS": "14"
+  },
+  "secrets": {
+    "required": [
+      "GITHUB_TOKEN",
+      "ADMIN_KEY",
+      "INGEST_SHARED_SECRET"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pagespeed-reports",
+      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
 }
