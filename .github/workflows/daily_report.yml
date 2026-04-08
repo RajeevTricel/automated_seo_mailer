@@ -53,6 +53,7 @@ jobs:
           TIMEZONE: Europe/Dublin
           REPORT_TRIGGER_URL: ${{ vars.REPORT_TRIGGER_URL }}
           REPORT_REFRESH_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/daily-report.yml
+          REPORT_ACCESS_CONTACT: mkdelivery@tricel.ie
 
       - name: Prepare Pages site
         run: |
