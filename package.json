@@ -10,10 +10,6 @@
     "dry-run": "node index.js --dry-run",
     "build-report": "node index.js --build-only",
     "send-email": "node index.js --send-only"
-    "worker:deploy": "cd trigger-worker && wrangler deploy",
-    "worker:migrate:local": "cd trigger-worker && wrangler d1 migrations apply pagespeed-reports --local",
-    "worker:migrate:remote": "cd trigger-worker && wrangler d1 migrations apply pagespeed-reports --remote",
-    "report:ingest": "node scripts/ingest-report-to-worker.mjs"
   },
   "engines": {
     "node": ">=20"
