@@ -1,5 +1,12 @@
 {
   "name": "tricel-report-trigger",
   "main": "src/index.js",
-  "compatibility_date": "2026-04-07"
+  "compatibility_date": "2026-04-07",
+  "vars": {
+    "GITHUB_OWNER": "RajeevTricel",
+    "GITHUB_REPO": "automated_seo_mailer",
+    "GITHUB_WORKFLOW_ID": "daily_report.yml",
+    "GITHUB_REF": "main",
+    "ALLOWED_ORIGIN": "https://pagespeed.tricel.eu"
+  }
 }
