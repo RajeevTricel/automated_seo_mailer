@@ -2,6 +2,15 @@ name: Daily PageSpeed Report
 
 on:
   workflow_dispatch:
+    inputs:
+      send_email:
+        description: "Send email after refresh"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
   schedule:
     - cron: "7 8 * * *"
       timezone: "Europe/Dublin"
@@ -63,6 +72,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
       - name: Send overview email from saved snapshot
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.send_email == 'true') }}
         run: npm run send-email
         env:
           EMAILJS_SERVICE_ID: ${{ secrets.EMAILJS_SERVICE_ID }}
@@ -76,4 +86,3 @@ jobs:
           TIMEZONE: Europe/Dublin
           REPORT_URL: ${{ steps.deployment.outputs.page_url }}
           STRICT_MODE: "false"
-
