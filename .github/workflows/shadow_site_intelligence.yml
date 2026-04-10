@@ -1,3 +1,4 @@
+# .github/workflows/shadow_site_intelligence.yml
 name: Shadow Site Intelligence
 
 on:
@@ -61,6 +62,7 @@ jobs:
           jq -n \
             --arg source "shadow_site_intelligence" \
             --arg trigger_type "${{ github.event_name }}" \
+            --arg report_url "" \
             --arg repo "${{ github.repository }}" \
             --arg ref "${{ github.ref_name }}" \
             --arg sha "${{ github.sha }}" \
@@ -70,6 +72,7 @@ jobs:
             '{
               source: $source,
               trigger_type: $trigger_type,
+              report_url: $report_url,
               repository: $repo,
               ref: $ref,
               workflow_sha: $sha,
