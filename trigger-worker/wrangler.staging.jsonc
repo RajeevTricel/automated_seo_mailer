@@ -7,8 +7,6 @@
     "GITHUB_REPO": "automated_seo_mailer",
     "GITHUB_WORKFLOW_ID": "shadow_site_intelligence.yml",
     "GITHUB_REF": "main",
-
-    // Use your hidden/staging frontend origin later.
-    // This is not the ingest secret.
     "ALLOWED_ORIGIN": "http://localhost:3000"
   }
+}
