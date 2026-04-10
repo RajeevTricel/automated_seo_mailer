@@ -7,7 +7,7 @@
     "GITHUB_REPO": "automated_seo_mailer",
     "GITHUB_WORKFLOW_ID": "shadow_site_intelligence.yml",
     "GITHUB_REF": "main",
-    "ALLOWED_ORIGIN": *
+    "ALLOWED_ORIGIN": "*"
   },
   "d1_databases": [
     {
