@@ -59,6 +59,7 @@ jobs:
         run: |
           mkdir -p site
           cp report-preview.html site/index.html
+          cp robots.txt site/robots.txt
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
