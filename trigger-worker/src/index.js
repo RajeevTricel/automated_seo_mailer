@@ -175,7 +175,7 @@ async function handleIngestRun(request, env, corsHeaders) {
 
   let normalized;
   try {
-    normalized = normalizeSnapshot(snapshot, createdAt);
+    normalized = normalizeSnapshot(runId, snapshot, createdAt);
   } catch (error) {
     await markRunFailed(env.DB, runId);
     return json(
