@@ -725,6 +725,7 @@ function buildHtmlReport(report, generatedAt, timeZone) {
     <meta charset="utf-8" />
     <title>Tricel PageSpeed Report</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow">
   </head>
   <body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial, Helvetica, sans-serif;color:#0f172a;">
     <div style="max-width:1180px;margin:0 auto;">
