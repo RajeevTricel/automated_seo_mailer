@@ -1,1 +1,87 @@
+name: Shadow Site Intelligence
 
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "37 8 * * *"
+      timezone: "Europe/Dublin"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-site-intelligence
+  cancel-in-progress: false
+
+jobs:
+  build-and-ingest-pagespeed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build shadow PageSpeed snapshot
+        run: npm run build-report
+        env:
+          PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
+          REPORT_STRATEGIES: ${{ vars.REPORT_STRATEGIES }}
+          REQUEST_DELAY_MS: ${{ vars.REQUEST_DELAY_MS }}
+          TIMEZONE: Europe/Dublin
+          REPORT_TRIGGER_URL: ""
+          REPORT_REFRESH_URL: ""
+          REPORT_ACCESS_CONTACT: ""
+
+      - name: Validate generated files
+        run: |
+          test -f report-data.json
+          test -f report-preview.html
+
+      - name: Upload shadow debug artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-pagespeed-snapshot-${{ github.run_id }}
+          path: |
+            report-data.json
+            report-preview.html
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build ingest payload
+        run: |
+          jq -n \
+            --arg source "shadow_site_intelligence" \
+            --arg trigger_type "${{ github.event_name }}" \
+            --arg repo "${{ github.repository }}" \
+            --arg ref "${{ github.ref_name }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg run_attempt "${{ github.run_attempt }}" \
+            --slurpfile snapshot report-data.json \
+            '{
+              source: $source,
+              trigger_type: $trigger_type,
+              repository: $repo,
+              ref: $ref,
+              workflow_sha: $sha,
+              workflow_run_id: ($run_id | tonumber),
+              workflow_run_attempt: ($run_attempt | tonumber),
+              snapshot: $snapshot[0]
+            }' > ingest-payload.json
+
+      - name: Send snapshot to staging ingest endpoint
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -X POST "${{ vars.SHADOW_INGEST_URL }}" \
+            -H "content-type: application/json" \
+            -H "x-ingest-secret: ${{ secrets.SHADOW_INGEST_SECRET }}" \
+            --data-binary @ingest-payload.json
