@@ -1,5 +1,5 @@
 {
-  "name": "tricel-report-trigger-staging",
+  "name": "automatedseomailerstaging",
   "main": "src/index.js",
   "compatibility_date": "2026-04-07",
   "vars": {
@@ -8,5 +8,12 @@
     "GITHUB_WORKFLOW_ID": "shadow_site_intelligence.yml",
     "GITHUB_REF": "main",
     "ALLOWED_ORIGIN": "http://localhost:3000"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tricel-shadow-staging",
+      "database_id": "PUT_YOUR_REAL_D1_DATABASE_ID_HERE"
+    }
+  ]
 }
