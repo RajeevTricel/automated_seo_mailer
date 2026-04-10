@@ -362,7 +362,6 @@ async function markRunFailed(db, runId) {
 }
 
 function normalizeSnapshot(runId, snapshot, createdAt) {
-  const runId = runId;
   const candidates = collectResultCandidates(snapshot);
   const siteResults = [];
   const siteExtractions = [];
