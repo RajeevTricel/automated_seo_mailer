@@ -1,3 +1,5 @@
+-- trigger-worker/migrations/0001_phase1_pagespeed_storage.sql
+
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   source TEXT NOT NULL,
@@ -13,8 +15,15 @@ CREATE TABLE IF NOT EXISTS runs (
   raw_snapshot_json TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_runs_is_current ON runs(is_current, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_runs_status_created_at ON runs(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_status_created_at
+  ON runs(status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_runs_is_current_created_at
+  ON runs(is_current, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_only_one_current
+  ON runs(is_current)
+  WHERE is_current = 1;
 
 CREATE TABLE IF NOT EXISTS site_results (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,9 +42,14 @@ CREATE TABLE IF NOT EXISTS site_results (
   FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_site_results_run_id ON site_results(run_id);
-CREATE INDEX IF NOT EXISTS idx_site_results_site_strategy ON site_results(site_url, strategy);
-CREATE INDEX IF NOT EXISTS idx_site_results_run_site_strategy ON site_results(run_id, site_url, strategy);
+CREATE INDEX IF NOT EXISTS idx_site_results_run_id
+  ON site_results(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_site_results_site_strategy
+  ON site_results(site_url, strategy);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_site_results_run_site_strategy_unique
+  ON site_results(run_id, site_url, strategy);
 
 CREATE TABLE IF NOT EXISTS site_extractions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,5 +68,11 @@ CREATE TABLE IF NOT EXISTS site_extractions (
   FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_site_extractions_run_id ON site_extractions(run_id);
-CREATE INDEX IF NOT EXISTS idx_site_extractions_site_strategy ON site_extractions(site_url, strategy);
+CREATE INDEX IF NOT EXISTS idx_site_extractions_run_id
+  ON site_extractions(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_site_extractions_site_strategy
+  ON site_extractions(site_url, strategy);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_site_extractions_run_site_strategy_unique
+  ON site_extractions(run_id, site_url, strategy);
