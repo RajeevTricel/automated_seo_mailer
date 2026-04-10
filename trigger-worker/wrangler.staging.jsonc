@@ -1,0 +1,14 @@
+{
+  "name": "tricel-report-trigger-staging",
+  "main": "src/index.js",
+  "compatibility_date": "2026-04-07",
+  "vars": {
+    "GITHUB_OWNER": "RajeevTricel",
+    "GITHUB_REPO": "automated_seo_mailer",
+    "GITHUB_WORKFLOW_ID": "shadow_site_intelligence.yml",
+    "GITHUB_REF": "main",
+
+    // Use your hidden/staging frontend origin later.
+    // This is not the ingest secret.
+    "ALLOWED_ORIGIN": "http://localhost:3000"
+  }
