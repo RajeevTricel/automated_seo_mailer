@@ -115,16 +115,21 @@ async function handleIngestRun(request, env, corsHeaders) {
     return json({ ok: false, message: 'Invalid JSON body' }, 400, corsHeaders);
   }
 
-  const snapshot = isObject(payload?.snapshot) ? payload.snapshot : payload;
+  const snapshotEnvelope = isObject(payload?.snapshot) ? payload.snapshot : payload;
+  const snapshot =
+    isObject(snapshotEnvelope?.report) ? snapshotEnvelope.report : snapshotEnvelope;
+
   const createdAt = new Date().toISOString();
   const runId = buildRunId(payload);
   const source = asNonEmptyString(payload?.source) || 'shadow_site_intelligence';
   const triggerType = asNonEmptyString(payload?.trigger_type) || 'workflow_dispatch';
   const reportUrl =
     asNullableString(payload?.report_url) ||
+    asNullableString(snapshotEnvelope?.report_url) ||
+    asNullableString(snapshotEnvelope?.reportUrl) ||
     asNullableString(snapshot?.report_url) ||
     asNullableString(snapshot?.reportUrl);
-  const snapshotGeneratedAt = extractSnapshotGeneratedAt(payload, snapshot);
+  const snapshotGeneratedAt = extractSnapshotGeneratedAt(payload, snapshotEnvelope, snapshot);
 
   const existingRun = await env.DB.prepare('SELECT id, status FROM runs WHERE id = ?')
     .bind(runId)
@@ -169,7 +174,7 @@ async function handleIngestRun(request, env, corsHeaders) {
       reportUrl,
       snapshotGeneratedAt,
       createdAt,
-      safeJsonStringify(snapshot)
+      safeJsonStringify(snapshotEnvelope)
     )
     .run();
 
@@ -670,9 +675,14 @@ function normalizeScore(score) {
   return numeric <= 1 ? Math.round(numeric * 100) : Math.round(numeric);
 }
 
-function extractSnapshotGeneratedAt(payload, snapshot) {
+function extractSnapshotGeneratedAt(payload, snapshotEnvelope, snapshot) {
   const candidates = [
     payload?.snapshot_generated_at,
+    snapshotEnvelope?.snapshot_generated_at,
+    snapshotEnvelope?.generated_at,
+    snapshotEnvelope?.generatedAt,
+    snapshotEnvelope?.created_at,
+    snapshotEnvelope?.createdAt,
     snapshot?.snapshot_generated_at,
     snapshot?.generated_at,
     snapshot?.generatedAt,
@@ -689,7 +699,6 @@ function extractSnapshotGeneratedAt(payload, snapshot) {
 
   return null;
 }
-
 function buildRunId(payload) {
   if (payload?.workflow_run_id) {
     const runId = String(payload.workflow_run_id).trim();
