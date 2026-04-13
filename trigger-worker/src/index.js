@@ -149,7 +149,7 @@ async function handleIngestRun(request, env, corsHeaders) {
   }
 
   await env.DB.prepare(
-    `
+  `
       INSERT INTO runs (
         id,
         source,
@@ -167,16 +167,17 @@ async function handleIngestRun(request, env, corsHeaders) {
       VALUES (?, ?, ?, 'pending', 0, ?, ?, ?, NULL, 0, 0, ?)
     `
   )
-    .bind(
-      runId,
-      source,
-      triggerType,
-      reportUrl,
-      snapshotGeneratedAt,
-      createdAt,
-      safeJsonStringify(snapshotEnvelope)
-    )
-    .run();
+      .bind(
+        runId,
+        source,
+        triggerType,
+        reportUrl,
+        snapshotGeneratedAt,
+        createdAt,
+        safeJsonStringify(snapshotEnvelope)
+      )
+      .run();
+
 
   let normalized;
   try {
@@ -449,6 +450,35 @@ function normalizeSnapshot(runId, snapshot, createdAt) {
 function collectResultCandidates(snapshot) {
   const candidates = [];
 
+  if (Array.isArray(snapshot?.strategies)) {
+    for (const strategyWrapper of snapshot.strategies) {
+      if (!isObject(strategyWrapper) || !Array.isArray(strategyWrapper.groups)) {
+        continue;
+      }
+
+      for (const groupWrapper of strategyWrapper.groups) {
+        if (!isObject(groupWrapper) || !Array.isArray(groupWrapper.entries)) {
+          continue;
+        }
+
+        for (const entry of groupWrapper.entries) {
+          if (!isObject(entry)) {
+            continue;
+          }
+
+          candidates.push({
+            payload: snapshot,
+            siteWrapper: entry,
+            result: buildReportEntryResult(entry, strategyWrapper, groupWrapper),
+            strategyHint: strategyWrapper?.strategy
+          });
+        }
+      }
+    }
+
+    return dedupeCandidates(candidates);
+  }
+
   if (Array.isArray(snapshot?.sites)) {
     for (const siteWrapper of snapshot.sites) {
       candidates.push(...collectFromSiteWrapper(siteWrapper, snapshot));
@@ -472,95 +502,75 @@ function collectResultCandidates(snapshot) {
   return candidates;
 }
 
-function collectFromSiteWrapper(siteWrapper, payload) {
-  const candidates = [];
-
-  if (!isObject(siteWrapper)) {
-    return candidates;
-  }
-
-  if (Array.isArray(siteWrapper.results)) {
-    for (const result of siteWrapper.results) {
-      candidates.push({
-        payload,
-        siteWrapper,
-        result,
-        strategyHint: result?.strategy
-      });
-    }
-  }
-
-  const strategiesObject =
-    isObject(siteWrapper.strategies) ? siteWrapper.strategies : null;
-
-  if (strategiesObject) {
-    for (const strategy of ['desktop', 'mobile']) {
-      if (isObject(strategiesObject[strategy])) {
-        candidates.push({
-          payload,
-          siteWrapper,
-          result: strategiesObject[strategy],
-          strategyHint: strategy
-        });
-      }
-    }
-  }
-
-  for (const strategy of ['desktop', 'mobile']) {
-    if (isObject(siteWrapper[strategy])) {
-      candidates.push({
-        payload,
-        siteWrapper,
-        result: siteWrapper[strategy],
-        strategyHint: strategy
-      });
-    }
-  }
-
-  if (siteWrapper.strategy && isObject(siteWrapper)) {
-    candidates.push({
-      payload,
-      siteWrapper,
-      result: siteWrapper,
-      strategyHint: siteWrapper.strategy
-    });
-  }
-
-  return dedupeCandidates(candidates);
+function buildReportEntryResult(entry, strategyWrapper, groupWrapper) {
+  return {
+    ...entry,
+    strategy:
+      asNullableString(strategyWrapper?.strategy) ||
+      asNullableString(entry?.strategy),
+    site_url:
+      asNullableString(entry?.targetUrl) ||
+      asNullableString(entry?.site_url) ||
+      asNullableString(entry?.siteUrl) ||
+      asNullableString(entry?.url) ||
+      asNullableString(entry?.rawUrl),
+    group_name:
+      asNullableString(entry?.groupName) ||
+      asNullableString(groupWrapper?.groupName),
+    categories: mapReportScoresToCategories(entry?.scores),
+    audits: {},
+    metrics: {},
+    extractions: {}
+  };
 }
 
-function dedupeCandidates(candidates) {
-  const seen = new Set();
-  const output = [];
-
-  for (const candidate of candidates) {
-    const siteUrl = extractSiteUrl(candidate.siteWrapper, candidate.result) || '';
-    const strategy = extractStrategy(candidate.strategyHint, candidate.result) || '';
-    const rawKey = `${siteUrl}::${strategy}::${safeJsonStringify(candidate.result)}`;
-
-    if (seen.has(rawKey)) {
-      continue;
-    }
-
-    seen.add(rawKey);
-    output.push(candidate);
+function mapReportScoresToCategories(scores) {
+  if (!isObject(scores)) {
+    return {};
   }
 
-  return output;
+  const categories = {};
+
+  if (scores.performance !== undefined && scores.performance !== null) {
+    categories.performance = { score: Number(scores.performance) };
+  }
+
+  if (scores.accessibility !== undefined && scores.accessibility !== null) {
+    categories.accessibility = { score: Number(scores.accessibility) };
+  }
+
+  const bestPractices =
+    scores.bestPractices ??
+    scores['best-practices'] ??
+    null;
+
+  if (bestPractices !== null && bestPractices !== undefined) {
+    categories['best-practices'] = { score: Number(bestPractices) };
+  }
+
+  if (scores.seo !== undefined && scores.seo !== null) {
+    categories.seo = { score: Number(scores.seo) };
+  }
+
+  return categories;
 }
 
 function extractSiteUrl(siteWrapper, result) {
   const values = [
     result?.site_url,
     result?.siteUrl,
+    result?.targetUrl,
     result?.url,
     result?.site,
     result?.website,
+    result?.rawUrl,
     siteWrapper?.site_url,
     siteWrapper?.siteUrl,
+    siteWrapper?.targetUrl,
     siteWrapper?.url,
     siteWrapper?.site,
     siteWrapper?.website,
+    siteWrapper?.rawUrl,
     siteWrapper?.domain
   ];
 
@@ -574,23 +584,11 @@ function extractSiteUrl(siteWrapper, result) {
   return null;
 }
 
-function extractStrategy(strategyHint, result) {
-  const value = String(
-    strategyHint || result?.strategy || result?.formFactor || ''
-  ).toLowerCase();
-
-  if (value.includes('desktop')) {
-    return 'desktop';
-  }
-
-  if (value.includes('mobile')) {
-    return 'mobile';
-  }
-
-  return null;
-}
-
 function extractCategories(result) {
+  if (isObject(result?.scores)) {
+    return mapReportScoresToCategories(result.scores);
+  }
+
   return (
     result?.categories ||
     result?.categoryScores ||
@@ -651,28 +649,6 @@ function extractExtractions(result, audits) {
     entity_summary: {},
     answer_readiness: {}
   };
-}
-
-function extractCategoryScore(categories, key) {
-  const category = categories?.[key];
-  if (!isObject(category)) {
-    return null;
-  }
-
-  return normalizeScore(category.score);
-}
-
-function normalizeScore(score) {
-  if (score === null || score === undefined || score === '') {
-    return null;
-  }
-
-  const numeric = Number(score);
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-
-  return numeric <= 1 ? Math.round(numeric * 100) : Math.round(numeric);
 }
 
 function extractSnapshotGeneratedAt(payload, snapshotEnvelope, snapshot) {
