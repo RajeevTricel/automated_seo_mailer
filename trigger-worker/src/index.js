@@ -30,6 +30,10 @@ export default {
     if (url.pathname === '/api/site-overview') {
       return handleSiteOverview(request, env, corsHeaders);
     }
+    if (url.pathname === '/api/site-pagespeed') {
+      return handleSitePagespeed(request, env, corsHeaders);
+    }
+
 
     return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
   }
@@ -620,6 +624,111 @@ async function getCurrentOrLatestSuccessfulRun(db) {
   ).first();
 
   return latestSuccessfulRun || null;
+}
+
+async function handleSitePagespeed(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const url = new URL(request.url);
+  const site = asNullableString(url.searchParams.get('site'));
+
+  if (!site) {
+    return json({ ok: false, message: 'Missing required query param: site' }, 400, corsHeaders);
+  }
+
+  const run = await getCurrentOrLatestSuccessfulRun(env.DB);
+
+  if (!run) {
+    return json({ ok: false, message: 'No runs found' }, 404, corsHeaders);
+  }
+
+  const result = await env.DB.prepare(
+    `
+      SELECT
+        run_id,
+        site_url,
+        strategy,
+        performance_score,
+        accessibility_score,
+        best_practices_score,
+        seo_score,
+        metrics_json,
+        categories_json,
+        audits_json,
+        raw_result_json,
+        created_at
+      FROM site_results
+      WHERE run_id = ?
+        AND site_url = ?
+      ORDER BY CASE strategy
+        WHEN 'desktop' THEN 1
+        WHEN 'mobile' THEN 2
+        ELSE 99
+      END
+    `
+  )
+    .bind(run.id, site)
+    .all();
+
+  const rows = Array.isArray(result?.results) ? result.results : [];
+
+  if (!rows.length) {
+    return json(
+      {
+        ok: false,
+        message: 'Site not found in current run',
+        run_id: run.id,
+        site
+      },
+      404,
+      corsHeaders
+    );
+  }
+
+  const strategies = {};
+
+  for (const row of rows) {
+    strategies[row.strategy] = {
+      strategy: row.strategy,
+      site_url: row.site_url,
+      created_at: row.created_at,
+      scores: {
+        performance: row.performance_score,
+        accessibility: row.accessibility_score,
+        best_practices: row.best_practices_score,
+        seo: row.seo_score
+      },
+      metrics: parseJsonField(row.metrics_json, {}),
+      categories: parseJsonField(row.categories_json, {}),
+      audits: parseJsonField(row.audits_json, {}),
+      raw_result: parseJsonField(row.raw_result_json, {})
+    };
+  }
+
+  return json(
+    {
+      ok: true,
+      run: {
+        id: run.id,
+        created_at: run.created_at,
+        snapshot_generated_at: run.snapshot_generated_at,
+        site_count: run.site_count,
+        strategy_count: run.strategy_count
+      },
+      site: {
+        site_url: site
+      },
+      pagespeed: strategies
+    },
+    200,
+    corsHeaders
+  );
 }
 
 function normalizeSnapshot(runId, snapshot, createdAt) {
