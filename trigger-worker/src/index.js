@@ -337,48 +337,55 @@ async function insertSiteResults(db, rows) {
   await executeBatches(db, statements, 50);
 }
 
-async function insertSiteExtractions(db, rows) {
-  if (!rows.length) {
-    return;
-  }
-
+async function insertSiteResults(db, rows) {
   const statements = rows.map((row) =>
     db.prepare(
       `
-        INSERT INTO site_extractions (
+        INSERT INTO site_results (
           run_id,
           site_url,
           strategy,
-          title,
-          meta_description,
-          canonical_url,
-          robots_directives,
-          schema_summary_json,
-          heading_summary_json,
-          entity_summary_json,
-          answer_readiness_json,
+          display_name,
+          group_name,
+          raw_url,
+          target_url,
+          error,
+          performance_score,
+          accessibility_score,
+          best_practices_score,
+          seo_score,
+          metrics_json,
+          categories_json,
+          audits_json,
+          raw_result_json,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     ).bind(
       row.run_id,
       row.site_url,
       row.strategy,
-      row.title,
-      row.meta_description,
-      row.canonical_url,
-      row.robots_directives,
-      row.schema_summary_json,
-      row.heading_summary_json,
-      row.entity_summary_json,
-      row.answer_readiness_json,
+      row.display_name,
+      row.group_name,
+      row.raw_url,
+      row.target_url,
+      row.error,
+      row.performance_score,
+      row.accessibility_score,
+      row.best_practices_score,
+      row.seo_score,
+      row.metrics_json,
+      row.categories_json,
+      row.audits_json,
+      row.raw_result_json,
       row.created_at
     )
   );
 
   await executeBatches(db, statements, 50);
 }
+
 
 async function executeBatches(db, statements, batchSize) {
   for (let index = 0; index < statements.length; index += batchSize) {
@@ -626,6 +633,66 @@ async function getCurrentOrLatestSuccessfulRun(db) {
   return latestSuccessfulRun || null;
 }
 
+async function handleSites(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const currentRun = await getCurrentOrLatestSuccessfulRun(env.DB);
+
+  if (!currentRun) {
+    return json({ ok: false, message: 'No runs found' }, 404, corsHeaders);
+  }
+
+  const result = await env.DB.prepare(
+    `
+      SELECT
+        site_url,
+        MAX(display_name) AS display_name,
+        MAX(group_name) AS group_name,
+        MAX(raw_url) AS raw_url,
+        MAX(target_url) AS target_url,
+        MAX(CASE WHEN strategy = 'desktop' THEN performance_score END) AS desktop_performance_score,
+        MAX(CASE WHEN strategy = 'desktop' THEN accessibility_score END) AS desktop_accessibility_score,
+        MAX(CASE WHEN strategy = 'desktop' THEN best_practices_score END) AS desktop_best_practices_score,
+        MAX(CASE WHEN strategy = 'desktop' THEN seo_score END) AS desktop_seo_score,
+        MAX(CASE WHEN strategy = 'mobile' THEN performance_score END) AS mobile_performance_score,
+        MAX(CASE WHEN strategy = 'mobile' THEN accessibility_score END) AS mobile_accessibility_score,
+        MAX(CASE WHEN strategy = 'mobile' THEN best_practices_score END) AS mobile_best_practices_score,
+        MAX(CASE WHEN strategy = 'mobile' THEN seo_score END) AS mobile_seo_score,
+        COUNT(*) AS strategy_rows
+      FROM site_results
+      WHERE run_id = ?
+      GROUP BY site_url
+      ORDER BY group_name ASC, display_name ASC, site_url ASC
+    `
+  )
+    .bind(currentRun.id)
+    .all();
+
+  const sites = Array.isArray(result?.results) ? result.results : [];
+
+  return json(
+    {
+      ok: true,
+      run: {
+        id: currentRun.id,
+        created_at: currentRun.created_at,
+        snapshot_generated_at: currentRun.snapshot_generated_at,
+        site_count: currentRun.site_count,
+        strategy_count: currentRun.strategy_count
+      },
+      sites
+    },
+    200,
+    corsHeaders
+  );
+}
+
 async function handleSitePagespeed(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -654,6 +721,11 @@ async function handleSitePagespeed(request, env, corsHeaders) {
         run_id,
         site_url,
         strategy,
+        display_name,
+        group_name,
+        raw_url,
+        target_url,
+        error,
         performance_score,
         accessibility_score,
         best_practices_score,
@@ -697,6 +769,11 @@ async function handleSitePagespeed(request, env, corsHeaders) {
     strategies[row.strategy] = {
       strategy: row.strategy,
       site_url: row.site_url,
+      display_name: row.display_name,
+      group_name: row.group_name,
+      raw_url: row.raw_url,
+      target_url: row.target_url,
+      error: row.error,
       created_at: row.created_at,
       scores: {
         performance: row.performance_score,
@@ -756,6 +833,27 @@ function normalizeSnapshot(runId, snapshot, createdAt) {
       run_id: runId,
       site_url: siteUrl,
       strategy,
+      display_name:
+        asNullableString(candidate.result?.displayName) ||
+        asNullableString(candidate.siteWrapper?.displayName),
+      group_name:
+        asNullableString(candidate.result?.group_name) ||
+        asNullableString(candidate.result?.groupName) ||
+        asNullableString(candidate.siteWrapper?.group_name) ||
+        asNullableString(candidate.siteWrapper?.groupName),
+      raw_url:
+        asNullableString(candidate.result?.raw_url) ||
+        asNullableString(candidate.result?.rawUrl) ||
+        asNullableString(candidate.siteWrapper?.raw_url) ||
+        asNullableString(candidate.siteWrapper?.rawUrl),
+      target_url:
+        asNullableString(candidate.result?.target_url) ||
+        asNullableString(candidate.result?.targetUrl) ||
+        asNullableString(candidate.siteWrapper?.target_url) ||
+        asNullableString(candidate.siteWrapper?.targetUrl),
+      error:
+        asNullableString(candidate.result?.error) ||
+        asNullableString(candidate.siteWrapper?.error),
       performance_score: extractCategoryScore(categories, 'performance'),
       accessibility_score: extractCategoryScore(categories, 'accessibility'),
       best_practices_score:
@@ -810,6 +908,7 @@ function normalizeSnapshot(runId, snapshot, createdAt) {
     strategyCount: uniqueStrategyPairs.size
   };
 }
+
 
 function collectResultCandidates(snapshot) {
   const candidates = [];
