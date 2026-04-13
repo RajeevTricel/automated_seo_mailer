@@ -24,6 +24,9 @@ export default {
     if (url.pathname === '/api/latest-run') {
       return handleLatestRun(request, env, corsHeaders);
     }
+    if (url.pathname === '/api/sites') {
+      return handleSites(request, env, corsHeaders);
+    }
 
     return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
   }
@@ -446,6 +449,111 @@ async function markRunFailed(db, runId) {
   )
     .bind(new Date().toISOString(), runId)
     .run();
+}
+async function handleSites(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const currentRun = await getCurrentOrLatestSuccessfulRun(env.DB);
+
+  if (!currentRun) {
+    return json({ ok: false, message: 'No runs found' }, 404, corsHeaders);
+  }
+
+  const result = await env.DB.prepare(
+    `
+      SELECT
+        site_url,
+        MAX(CASE WHEN strategy = 'desktop' THEN performance_score END) AS desktop_performance_score,
+        MAX(CASE WHEN strategy = 'desktop' THEN accessibility_score END) AS desktop_accessibility_score,
+        MAX(CASE WHEN strategy = 'desktop' THEN best_practices_score END) AS desktop_best_practices_score,
+        MAX(CASE WHEN strategy = 'desktop' THEN seo_score END) AS desktop_seo_score,
+        MAX(CASE WHEN strategy = 'mobile' THEN performance_score END) AS mobile_performance_score,
+        MAX(CASE WHEN strategy = 'mobile' THEN accessibility_score END) AS mobile_accessibility_score,
+        MAX(CASE WHEN strategy = 'mobile' THEN best_practices_score END) AS mobile_best_practices_score,
+        MAX(CASE WHEN strategy = 'mobile' THEN seo_score END) AS mobile_seo_score,
+        COUNT(*) AS strategy_rows
+      FROM site_results
+      WHERE run_id = ?
+      GROUP BY site_url
+      ORDER BY site_url ASC
+    `
+  )
+    .bind(currentRun.id)
+    .all();
+
+  const sites = Array.isArray(result?.results) ? result.results : [];
+
+  return json(
+    {
+      ok: true,
+      run: {
+        id: currentRun.id,
+        created_at: currentRun.created_at,
+        snapshot_generated_at: currentRun.snapshot_generated_at,
+        site_count: currentRun.site_count,
+        strategy_count: currentRun.strategy_count
+      },
+      sites
+    },
+    200,
+    corsHeaders
+  );
+}
+
+async function getCurrentOrLatestSuccessfulRun(db) {
+  const currentRun = await db.prepare(
+    `
+      SELECT
+        id,
+        source,
+        trigger_type,
+        status,
+        is_current,
+        report_url,
+        snapshot_generated_at,
+        created_at,
+        completed_at,
+        site_count,
+        strategy_count
+      FROM runs
+      WHERE is_current = 1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+  ).first();
+
+  if (currentRun) {
+    return currentRun;
+  }
+
+  const latestSuccessfulRun = await db.prepare(
+    `
+      SELECT
+        id,
+        source,
+        trigger_type,
+        status,
+        is_current,
+        report_url,
+        snapshot_generated_at,
+        created_at,
+        completed_at,
+        site_count,
+        strategy_count
+      FROM runs
+      WHERE status = 'success'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+  ).first();
+
+  return latestSuccessfulRun || null;
 }
 
 function normalizeSnapshot(runId, snapshot, createdAt) {
