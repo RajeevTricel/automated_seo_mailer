@@ -21,6 +21,10 @@ export default {
       return handleIngestRun(request, env, corsHeaders);
     }
 
+    if (url.pathname === '/api/latest-run') {
+      return handleLatestRun(request, env, corsHeaders);
+    }
+
     return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
   }
 };
@@ -257,6 +261,89 @@ async function handleIngestRun(request, env, corsHeaders) {
       corsHeaders
     );
   }
+}
+
+async function handleLatestRun(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const currentRun = await env.DB.prepare(
+    `
+      SELECT
+        id,
+        source,
+        trigger_type,
+        status,
+        is_current,
+        report_url,
+        snapshot_generated_at,
+        created_at,
+        completed_at,
+        site_count,
+        strategy_count
+      FROM runs
+      WHERE is_current = 1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+  ).first();
+
+  if (currentRun) {
+    return json(
+      {
+        ok: true,
+        run: currentRun
+      },
+      200,
+      corsHeaders
+    );
+  }
+
+  const latestSuccessfulRun = await env.DB.prepare(
+    `
+      SELECT
+        id,
+        source,
+        trigger_type,
+        status,
+        is_current,
+        report_url,
+        snapshot_generated_at,
+        created_at,
+        completed_at,
+        site_count,
+        strategy_count
+      FROM runs
+      WHERE status = 'success'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+  ).first();
+
+  if (latestSuccessfulRun) {
+    return json(
+      {
+        ok: true,
+        run: latestSuccessfulRun
+      },
+      200,
+      corsHeaders
+    );
+  }
+
+  return json(
+    {
+      ok: false,
+      message: 'No runs found'
+    },
+    404,
+    corsHeaders
+  );
 }
 
 async function insertSiteResults(db, rows) {
