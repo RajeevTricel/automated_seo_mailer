@@ -1,4 +1,5 @@
 // trigger-worker/src/index.js
+
 export default {
   async fetch(request, env) {
     const corsHeaders = buildCorsHeaders(request, env);
@@ -31,7 +32,7 @@ async function handleTrigger(request, env, corsHeaders) {
 
   const origin = request.headers.get('Origin') || '';
 
-  if (env.ALLOWED_ORIGIN && origin !== env.ALLOWED_ORIGIN) {
+  if (env.ALLOWED_ORIGIN && env.ALLOWED_ORIGIN !== '*' && origin !== env.ALLOWED_ORIGIN) {
     return json({ ok: false, message: 'Origin not allowed' }, 403, corsHeaders);
   }
 
@@ -116,8 +117,7 @@ async function handleIngestRun(request, env, corsHeaders) {
   }
 
   const snapshotEnvelope = isObject(payload?.snapshot) ? payload.snapshot : payload;
-  const snapshot =
-    isObject(snapshotEnvelope?.report) ? snapshotEnvelope.report : snapshotEnvelope;
+  const snapshot = isObject(snapshotEnvelope?.report) ? snapshotEnvelope.report : snapshotEnvelope;
 
   const createdAt = new Date().toISOString();
   const runId = buildRunId(payload);
@@ -149,7 +149,7 @@ async function handleIngestRun(request, env, corsHeaders) {
   }
 
   await env.DB.prepare(
-  `
+    `
       INSERT INTO runs (
         id,
         source,
@@ -167,17 +167,16 @@ async function handleIngestRun(request, env, corsHeaders) {
       VALUES (?, ?, ?, 'pending', 0, ?, ?, ?, NULL, 0, 0, ?)
     `
   )
-      .bind(
-        runId,
-        source,
-        triggerType,
-        reportUrl,
-        snapshotGeneratedAt,
-        createdAt,
-        safeJsonStringify(snapshotEnvelope)
-      )
-      .run();
-
+    .bind(
+      runId,
+      source,
+      triggerType,
+      reportUrl,
+      snapshotGeneratedAt,
+      createdAt,
+      safeJsonStringify(snapshotEnvelope)
+    )
+    .run();
 
   let normalized;
   try {
@@ -202,6 +201,7 @@ async function handleIngestRun(request, env, corsHeaders) {
         ok: false,
         message: 'No site result rows could be extracted from snapshot',
         run_id: runId,
+        snapshot_envelope_keys: Object.keys(snapshotEnvelope || {}),
         snapshot_keys: Object.keys(snapshot || {})
       },
       400,
@@ -229,12 +229,7 @@ async function handleIngestRun(request, env, corsHeaders) {
         WHERE id = ?
       `
     )
-      .bind(
-        new Date().toISOString(),
-        normalized.siteCount,
-        normalized.strategyCount,
-        runId
-      )
+      .bind(new Date().toISOString(), normalized.siteCount, normalized.strategyCount, runId)
       .run();
 
     return json(
@@ -348,8 +343,7 @@ async function insertSiteExtractions(db, rows) {
 
 async function executeBatches(db, statements, batchSize) {
   for (let index = 0; index < statements.length; index += batchSize) {
-    const chunk = statements.slice(index, index + batchSize);
-    await db.batch(chunk);
+    await db.batch(statements.slice(index, index + batchSize));
   }
 }
 
@@ -483,7 +477,7 @@ function collectResultCandidates(snapshot) {
     for (const siteWrapper of snapshot.sites) {
       candidates.push(...collectFromSiteWrapper(siteWrapper, snapshot));
     }
-    return candidates;
+    return dedupeCandidates(candidates);
   }
 
   if (Array.isArray(snapshot?.results)) {
@@ -495,11 +489,11 @@ function collectResultCandidates(snapshot) {
         strategyHint: result?.strategy
       });
     }
-    return candidates;
+    return dedupeCandidates(candidates);
   }
 
   candidates.push(...collectFromSiteWrapper(snapshot, snapshot));
-  return candidates;
+  return dedupeCandidates(candidates);
 }
 
 function buildReportEntryResult(entry, strategyWrapper, groupWrapper) {
@@ -524,6 +518,82 @@ function buildReportEntryResult(entry, strategyWrapper, groupWrapper) {
   };
 }
 
+function collectFromSiteWrapper(siteWrapper, payload) {
+  const candidates = [];
+
+  if (!isObject(siteWrapper)) {
+    return candidates;
+  }
+
+  if (Array.isArray(siteWrapper.results)) {
+    for (const result of siteWrapper.results) {
+      candidates.push({
+        payload,
+        siteWrapper,
+        result,
+        strategyHint: result?.strategy
+      });
+    }
+  }
+
+  const strategiesObject = isObject(siteWrapper.strategies) ? siteWrapper.strategies : null;
+
+  if (strategiesObject) {
+    for (const strategy of ['desktop', 'mobile']) {
+      if (isObject(strategiesObject[strategy])) {
+        candidates.push({
+          payload,
+          siteWrapper,
+          result: strategiesObject[strategy],
+          strategyHint: strategy
+        });
+      }
+    }
+  }
+
+  for (const strategy of ['desktop', 'mobile']) {
+    if (isObject(siteWrapper[strategy])) {
+      candidates.push({
+        payload,
+        siteWrapper,
+        result: siteWrapper[strategy],
+        strategyHint: strategy
+      });
+    }
+  }
+
+  if (siteWrapper.strategy && isObject(siteWrapper)) {
+    candidates.push({
+      payload,
+      siteWrapper,
+      result: siteWrapper,
+      strategyHint: siteWrapper.strategy
+    });
+  }
+
+  return dedupeCandidates(candidates);
+}
+
+function dedupeCandidates(candidates) {
+  const seen = new Set();
+  const output = [];
+
+  for (const candidate of candidates) {
+    const siteUrl = extractSiteUrl(candidate.siteWrapper, candidate.result) || '';
+    const strategy = extractStrategy(candidate.strategyHint, candidate.result) || '';
+    const rawKey = `${siteUrl}::${strategy}::${safeJsonStringify(candidate.result)}`;
+
+    if (seen.has(rawKey)) {
+      continue;
+    }
+
+    seen.add(rawKey);
+    output.push(candidate);
+  }
+
+  return output;
+}
+
 function mapReportScoresToCategories(scores) {
   if (!isObject(scores)) {
     return {};
@@ -539,11 +609,7 @@ function mapReportScoresToCategories(scores) {
     categories.accessibility = { score: Number(scores.accessibility) };
   }
 
-  const bestPractices =
-    scores.bestPractices ??
-    scores['best-practices'] ??
-    null;
-
+  const bestPractices = scores.bestPractices ?? scores['best-practices'] ?? null;
   if (bestPractices !== null && bestPractices !== undefined) {
     categories['best-practices'] = { score: Number(bestPractices) };
   }
@@ -579,6 +645,20 @@ function extractSiteUrl(siteWrapper, result) {
     if (stringValue) {
       return stringValue;
     }
+  }
+
+  return null;
+}
+
+function extractStrategy(strategyHint, result) {
+  const value = String(strategyHint || result?.strategy || result?.formFactor || '').toLowerCase();
+
+  if (value.includes('desktop')) {
+    return 'desktop';
+  }
+
+  if (value.includes('mobile')) {
+    return 'mobile';
   }
 
   return null;
@@ -651,6 +731,28 @@ function extractExtractions(result, audits) {
   };
 }
 
+function extractCategoryScore(categories, key) {
+  const category = categories?.[key];
+  if (!isObject(category)) {
+    return null;
+  }
+
+  return normalizeScore(category.score);
+}
+
+function normalizeScore(score) {
+  if (score === null || score === undefined || score === '') {
+    return null;
+  }
+
+  const numeric = Number(score);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+
+  return numeric <= 1 ? Math.round(numeric * 100) : Math.round(numeric);
+}
+
 function extractSnapshotGeneratedAt(payload, snapshotEnvelope, snapshot) {
   const candidates = [
     payload?.snapshot_generated_at,
@@ -675,11 +777,12 @@ function extractSnapshotGeneratedAt(payload, snapshotEnvelope, snapshot) {
 
   return null;
 }
+
 function buildRunId(payload) {
   if (payload?.workflow_run_id) {
-    const runId = String(payload.workflow_run_id).trim();
+    const workflowRunId = String(payload.workflow_run_id).trim();
     const attempt = String(payload?.workflow_run_attempt || '1').trim();
-    return `gha-${runId}-${attempt}`;
+    return `gha-${workflowRunId}-${attempt}`;
   }
 
   if (payload?.run_id) {
@@ -692,9 +795,11 @@ function buildRunId(payload) {
 function buildCorsHeaders(request, env) {
   const origin = request.headers.get('Origin') || '';
   const allowOrigin =
-    env.ALLOWED_ORIGIN && origin === env.ALLOWED_ORIGIN
-      ? origin
-      : env.ALLOWED_ORIGIN || '*';
+    env.ALLOWED_ORIGIN === '*'
+      ? '*'
+      : env.ALLOWED_ORIGIN && origin === env.ALLOWED_ORIGIN
+        ? origin
+        : env.ALLOWED_ORIGIN || '*';
 
   return {
     'Access-Control-Allow-Origin': allowOrigin,
@@ -729,7 +834,7 @@ function asNonEmptyString(value) {
   }
 
   const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+  return trimmed || null;
 }
 
 function asNullableString(value) {
