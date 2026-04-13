@@ -27,6 +27,9 @@ export default {
     if (url.pathname === '/api/sites') {
       return handleSites(request, env, corsHeaders);
     }
+    if (url.pathname === '/api/site-overview') {
+      return handleSiteOverview(request, env, corsHeaders);
+    }
 
     return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
   }
@@ -275,76 +278,18 @@ async function handleLatestRun(request, env, corsHeaders) {
     return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
   }
 
-  const currentRun = await env.DB.prepare(
-    `
-      SELECT
-        id,
-        source,
-        trigger_type,
-        status,
-        is_current,
-        report_url,
-        snapshot_generated_at,
-        created_at,
-        completed_at,
-        site_count,
-        strategy_count
-      FROM runs
-      WHERE is_current = 1
-      ORDER BY created_at DESC
-      LIMIT 1
-    `
-  ).first();
+  const run = await getCurrentOrLatestSuccessfulRun(env.DB);
 
-  if (currentRun) {
-    return json(
-      {
-        ok: true,
-        run: currentRun
-      },
-      200,
-      corsHeaders
-    );
-  }
-
-  const latestSuccessfulRun = await env.DB.prepare(
-    `
-      SELECT
-        id,
-        source,
-        trigger_type,
-        status,
-        is_current,
-        report_url,
-        snapshot_generated_at,
-        created_at,
-        completed_at,
-        site_count,
-        strategy_count
-      FROM runs
-      WHERE status = 'success'
-      ORDER BY created_at DESC
-      LIMIT 1
-    `
-  ).first();
-
-  if (latestSuccessfulRun) {
-    return json(
-      {
-        ok: true,
-        run: latestSuccessfulRun
-      },
-      200,
-      corsHeaders
-    );
+  if (!run) {
+    return json({ ok: false, message: 'No runs found' }, 404, corsHeaders);
   }
 
   return json(
     {
-      ok: false,
-      message: 'No runs found'
+      ok: true,
+      run
     },
-    404,
+    200,
     corsHeaders
   );
 }
@@ -506,6 +451,177 @@ async function handleSites(request, env, corsHeaders) {
   );
 }
 
+async function getCurrentOrLatestSuccessfulRun(db) {
+  const currentRun = await db.prepare(
+    `
+      SELECT
+        id,
+        source,
+        trigger_type,
+        status,
+        is_current,
+        report_url,
+        snapshot_generated_at,
+        created_at,
+        completed_at,
+        site_count,
+        strategy_count
+      FROM runs
+      WHERE is_current = 1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+  ).first();
+
+  if (currentRun) {
+    return currentRun;
+  }
+
+  const latestSuccessfulRun = await db.prepare(
+    `
+      SELECT
+        id,
+        source,
+        trigger_type,
+        status,
+        is_current,
+        report_url,
+        snapshot_generated_at,
+        created_at,
+        completed_at,
+        site_count,
+        strategy_count
+      FROM runs
+      WHERE status = 'success'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `
+  ).first();
+
+  return latestSuccessfulRun || null;
+}
+async function handleSiteOverview(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const url = new URL(request.url);
+  const site = asNullableString(url.searchParams.get('site'));
+
+  if (!site) {
+    return json({ ok: false, message: 'Missing required query param: site' }, 400, corsHeaders);
+  }
+
+  const run = await getCurrentOrLatestSuccessfulRun(env.DB);
+
+  if (!run) {
+    return json({ ok: false, message: 'No runs found' }, 404, corsHeaders);
+  }
+
+  const result = await env.DB.prepare(
+    `
+      SELECT
+        sr.run_id,
+        sr.site_url,
+        sr.strategy,
+        sr.performance_score,
+        sr.accessibility_score,
+        sr.best_practices_score,
+        sr.seo_score,
+        sr.metrics_json,
+        sr.categories_json,
+        sr.audits_json,
+        sr.raw_result_json,
+        sx.title,
+        sx.meta_description,
+        sx.canonical_url,
+        sx.robots_directives,
+        sx.schema_summary_json,
+        sx.heading_summary_json,
+        sx.entity_summary_json,
+        sx.answer_readiness_json
+      FROM site_results sr
+      LEFT JOIN site_extractions sx
+        ON sx.run_id = sr.run_id
+       AND sx.site_url = sr.site_url
+       AND sx.strategy = sr.strategy
+      WHERE sr.run_id = ?
+        AND sr.site_url = ?
+      ORDER BY CASE sr.strategy
+        WHEN 'desktop' THEN 1
+        WHEN 'mobile' THEN 2
+        ELSE 99
+      END
+    `
+  )
+    .bind(run.id, site)
+    .all();
+
+  const rows = Array.isArray(result?.results) ? result.results : [];
+
+  if (!rows.length) {
+    return json(
+      {
+        ok: false,
+        message: 'Site not found in current run',
+        run_id: run.id,
+        site
+      },
+      404,
+      corsHeaders
+    );
+  }
+
+  const strategies = {};
+
+  for (const row of rows) {
+    strategies[row.strategy] = {
+      scores: {
+        performance: row.performance_score,
+        accessibility: row.accessibility_score,
+        best_practices: row.best_practices_score,
+        seo: row.seo_score
+      },
+      metrics: parseJsonField(row.metrics_json, {}),
+      categories: parseJsonField(row.categories_json, {}),
+      audits: parseJsonField(row.audits_json, {}),
+      raw_result: parseJsonField(row.raw_result_json, {}),
+      extractions: {
+        title: row.title,
+        meta_description: row.meta_description,
+        canonical_url: row.canonical_url,
+        robots_directives: row.robots_directives,
+        schema_summary: parseJsonField(row.schema_summary_json, {}),
+        heading_summary: parseJsonField(row.heading_summary_json, {}),
+        entity_summary: parseJsonField(row.entity_summary_json, {}),
+        answer_readiness: parseJsonField(row.answer_readiness_json, {})
+      }
+    };
+  }
+
+  return json(
+    {
+      ok: true,
+      run: {
+        id: run.id,
+        created_at: run.created_at,
+        snapshot_generated_at: run.snapshot_generated_at,
+        site_count: run.site_count,
+        strategy_count: run.strategy_count
+      },
+      site: {
+        site_url: site,
+        strategies
+      }
+    },
+    200,
+    corsHeaders
+  );
+}
 async function getCurrentOrLatestSuccessfulRun(db) {
   const currentRun = await db.prepare(
     `
@@ -1020,6 +1136,17 @@ function safeJsonStringify(value) {
     return JSON.stringify(value ?? {});
   } catch {
     return JSON.stringify({ serialization_error: true });
+  }
+}
+function parseJsonField(value, fallback = null) {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
   }
 }
 
