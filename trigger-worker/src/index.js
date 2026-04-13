@@ -450,56 +450,6 @@ async function handleSites(request, env, corsHeaders) {
     corsHeaders
   );
 }
-
-async function getCurrentOrLatestSuccessfulRun(db) {
-  const currentRun = await db.prepare(
-    `
-      SELECT
-        id,
-        source,
-        trigger_type,
-        status,
-        is_current,
-        report_url,
-        snapshot_generated_at,
-        created_at,
-        completed_at,
-        site_count,
-        strategy_count
-      FROM runs
-      WHERE is_current = 1
-      ORDER BY created_at DESC
-      LIMIT 1
-    `
-  ).first();
-
-  if (currentRun) {
-    return currentRun;
-  }
-
-  const latestSuccessfulRun = await db.prepare(
-    `
-      SELECT
-        id,
-        source,
-        trigger_type,
-        status,
-        is_current,
-        report_url,
-        snapshot_generated_at,
-        created_at,
-        completed_at,
-        site_count,
-        strategy_count
-      FROM runs
-      WHERE status = 'success'
-      ORDER BY created_at DESC
-      LIMIT 1
-    `
-  ).first();
-
-  return latestSuccessfulRun || null;
-}
 async function handleSiteOverview(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
