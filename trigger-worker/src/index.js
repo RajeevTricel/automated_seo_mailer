@@ -306,45 +306,6 @@ async function insertSiteResults(db, rows) {
           run_id,
           site_url,
           strategy,
-          performance_score,
-          accessibility_score,
-          best_practices_score,
-          seo_score,
-          metrics_json,
-          categories_json,
-          audits_json,
-          raw_result_json,
-          created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `
-    ).bind(
-      row.run_id,
-      row.site_url,
-      row.strategy,
-      row.performance_score,
-      row.accessibility_score,
-      row.best_practices_score,
-      row.seo_score,
-      row.metrics_json,
-      row.categories_json,
-      row.audits_json,
-      row.raw_result_json,
-      row.created_at
-    )
-  );
-
-  await executeBatches(db, statements, 50);
-}
-
-async function insertSiteResults(db, rows) {
-  const statements = rows.map((row) =>
-    db.prepare(
-      `
-        INSERT INTO site_results (
-          run_id,
-          site_url,
-          strategy,
           display_name,
           group_name,
           raw_url,
@@ -425,6 +386,10 @@ async function handleSites(request, env, corsHeaders) {
     `
       SELECT
         site_url,
+        MAX(display_name) AS display_name,
+        MAX(group_name) AS group_name,
+        MAX(raw_url) AS raw_url,
+        MAX(target_url) AS target_url,
         MAX(CASE WHEN strategy = 'desktop' THEN performance_score END) AS desktop_performance_score,
         MAX(CASE WHEN strategy = 'desktop' THEN accessibility_score END) AS desktop_accessibility_score,
         MAX(CASE WHEN strategy = 'desktop' THEN best_practices_score END) AS desktop_best_practices_score,
@@ -437,7 +402,7 @@ async function handleSites(request, env, corsHeaders) {
       FROM site_results
       WHERE run_id = ?
       GROUP BY site_url
-      ORDER BY site_url ASC
+      ORDER BY group_name ASC, display_name ASC, site_url ASC
     `
   )
     .bind(currentRun.id)
@@ -633,65 +598,6 @@ async function getCurrentOrLatestSuccessfulRun(db) {
   return latestSuccessfulRun || null;
 }
 
-async function handleSites(request, env, corsHeaders) {
-  if (request.method !== 'GET') {
-    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
-  }
-
-  if (!env.DB) {
-    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
-  }
-
-  const currentRun = await getCurrentOrLatestSuccessfulRun(env.DB);
-
-  if (!currentRun) {
-    return json({ ok: false, message: 'No runs found' }, 404, corsHeaders);
-  }
-
-  const result = await env.DB.prepare(
-    `
-      SELECT
-        site_url,
-        MAX(display_name) AS display_name,
-        MAX(group_name) AS group_name,
-        MAX(raw_url) AS raw_url,
-        MAX(target_url) AS target_url,
-        MAX(CASE WHEN strategy = 'desktop' THEN performance_score END) AS desktop_performance_score,
-        MAX(CASE WHEN strategy = 'desktop' THEN accessibility_score END) AS desktop_accessibility_score,
-        MAX(CASE WHEN strategy = 'desktop' THEN best_practices_score END) AS desktop_best_practices_score,
-        MAX(CASE WHEN strategy = 'desktop' THEN seo_score END) AS desktop_seo_score,
-        MAX(CASE WHEN strategy = 'mobile' THEN performance_score END) AS mobile_performance_score,
-        MAX(CASE WHEN strategy = 'mobile' THEN accessibility_score END) AS mobile_accessibility_score,
-        MAX(CASE WHEN strategy = 'mobile' THEN best_practices_score END) AS mobile_best_practices_score,
-        MAX(CASE WHEN strategy = 'mobile' THEN seo_score END) AS mobile_seo_score,
-        COUNT(*) AS strategy_rows
-      FROM site_results
-      WHERE run_id = ?
-      GROUP BY site_url
-      ORDER BY group_name ASC, display_name ASC, site_url ASC
-    `
-  )
-    .bind(currentRun.id)
-    .all();
-
-  const sites = Array.isArray(result?.results) ? result.results : [];
-
-  return json(
-    {
-      ok: true,
-      run: {
-        id: currentRun.id,
-        created_at: currentRun.created_at,
-        snapshot_generated_at: currentRun.snapshot_generated_at,
-        site_count: currentRun.site_count,
-        strategy_count: currentRun.strategy_count
-      },
-      sites
-    },
-    200,
-    corsHeaders
-  );
-}
 
 async function handleSitePagespeed(request, env, corsHeaders) {
   if (request.method !== 'GET') {
