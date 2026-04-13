@@ -347,6 +347,49 @@ async function insertSiteResults(db, rows) {
   await executeBatches(db, statements, 50);
 }
 
+async function insertSiteExtractions(db, rows) {
+  if (!rows.length) {
+    return;
+  }
+
+  const statements = rows.map((row) =>
+    db.prepare(
+      `
+        INSERT INTO site_extractions (
+          run_id,
+          site_url,
+          strategy,
+          title,
+          meta_description,
+          canonical_url,
+          robots_directives,
+          schema_summary_json,
+          heading_summary_json,
+          entity_summary_json,
+          answer_readiness_json,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).bind(
+      row.run_id,
+      row.site_url,
+      row.strategy,
+      row.title,
+      row.meta_description,
+      row.canonical_url,
+      row.robots_directives,
+      row.schema_summary_json,
+      row.heading_summary_json,
+      row.entity_summary_json,
+      row.answer_readiness_json,
+      row.created_at
+    )
+  );
+
+  await executeBatches(db, statements, 50);
+}
+
 
 async function executeBatches(db, statements, batchSize) {
   for (let index = 0; index < statements.length; index += batchSize) {
