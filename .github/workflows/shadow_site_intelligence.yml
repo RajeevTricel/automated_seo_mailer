@@ -3,6 +3,51 @@ name: Shadow Site Intelligence
 
 on:
   workflow_dispatch:
+    inputs:
+      run_pagespeed:
+        description: "Run the shadow PageSpeed pipeline"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      run_gsc:
+        description: "Run GSC ingestion for one site"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      site_url:
+        description: "Canonical site URL from site_source_mappings"
+        required: false
+        default: ""
+        type: string
+      gsc_property:
+        description: "Exact GSC property, e.g. https://tricel.ie/ or sc-domain:tricelwater.ie"
+        required: false
+        default: ""
+        type: string
+      start_date:
+        description: "GSC start date (YYYY-MM-DD)"
+        required: false
+        default: ""
+        type: string
+      end_date:
+        description: "GSC end date (YYYY-MM-DD)"
+        required: false
+        default: ""
+        type: string
+      dry_run:
+        description: "Skip Worker ingest and only print payload summary"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
   schedule:
     - cron: "37 8 * * *"
       timezone: "Europe/Dublin"
@@ -16,6 +61,7 @@ concurrency:
 
 jobs:
   build-and-ingest-pagespeed:
+    if: github.event_name == 'schedule' || github.event.inputs.run_pagespeed != 'false'
     runs-on: ubuntu-latest
 
     steps:
@@ -88,3 +134,66 @@ jobs:
             -H "content-type: application/json" \
             -H "x-ingest-secret: ${{ secrets.SHADOW_INGEST_SECRET }}" \
             --data-binary @ingest-payload.json
+
+  ingest-gsc-single-site:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_gsc == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate GSC inputs
+        run: |
+          test -n "${{ github.event.inputs.site_url }}" || (echo "Missing site_url input" && exit 1)
+          test -n "${{ github.event.inputs.gsc_property }}" || (echo "Missing gsc_property input" && exit 1)
+          test -n "${{ github.event.inputs.start_date }}" || (echo "Missing start_date input" && exit 1)
+          test -n "${{ github.event.inputs.end_date }}" || (echo "Missing end_date input" && exit 1)
+
+      - name: Run GSC fetch and ingest
+        run: node scripts/gsc/fetch-gsc.js
+        env:
+          GSC_CLIENT_EMAIL: ${{ secrets.GSC_CLIENT_EMAIL }}
+          GSC_PRIVATE_KEY: ${{ secrets.GSC_PRIVATE_KEY }}
+          SITE_URL: ${{ github.event.inputs.site_url }}
+          GSC_PROPERTY: ${{ github.event.inputs.gsc_property }}
+          START_DATE: ${{ github.event.inputs.start_date }}
+          END_DATE: ${{ github.event.inputs.end_date }}
+          SEARCH_TYPE: web
+          ROW_LIMIT: 25000
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          GSC_INGEST_URL: ${{ vars.SHADOW_GSC_INGEST_URL }}
+          GSC_INGEST_SECRET: ${{ secrets.SHADOW_INGEST_SECRET }}
+
+      - name: Upload GSC debug marker
+        if: always()
+        run: |
+          cat <<'EOF' > gsc-run-summary.json
+          {
+            "site_url": "${{ github.event.inputs.site_url }}",
+            "gsc_property": "${{ github.event.inputs.gsc_property }}",
+            "start_date": "${{ github.event.inputs.start_date }}",
+            "end_date": "${{ github.event.inputs.end_date }}",
+            "dry_run": "${{ github.event.inputs.dry_run }}",
+            "workflow_run_id": "${{ github.run_id }}",
+            "workflow_run_attempt": "${{ github.run_attempt }}"
+          }
+          EOF
+
+      - name: Upload GSC debug artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-gsc-run-${{ github.run_id }}
+          path: gsc-run-summary.json
+          if-no-files-found: error
+          retention-days: 7
