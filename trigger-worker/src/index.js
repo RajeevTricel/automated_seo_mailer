@@ -678,6 +678,7 @@ async function handleLatestRun(request, env, corsHeaders) {
   );
 }
 
+// trigger-worker/src/index.js
 async function insertSiteResults(db, rows) {
   const statements = rows.map((row) =>
     db.prepare(
@@ -726,7 +727,6 @@ async function insertSiteResults(db, rows) {
 
   await executeBatches(db, statements, 50);
 }
-
 async function insertSiteExtractions(db, rows) {
   if (!rows.length) {
     return;
