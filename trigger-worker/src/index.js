@@ -516,6 +516,88 @@ async function handleIngestGsc(request, env, corsHeaders) {
     );
   }
 }
+async function upsertGscFreshnessSummary(db, input) {
+  const now = new Date().toISOString();
+
+  const existing = await db.prepare(
+    `
+      SELECT id
+      FROM site_freshness_summaries
+      WHERE site_url = ?
+      LIMIT 1
+    `
+  )
+    .bind(input.siteUrl)
+    .first();
+
+  if (existing?.id) {
+    await db.prepare(
+      `
+        UPDATE site_freshness_summaries
+        SET
+          gsc_last_updated_at = ?,
+          overall_freshness_status = 'fresh',
+          freshness_confidence_score = CASE
+            WHEN freshness_confidence_score < 0.5 THEN 0.5
+            ELSE freshness_confidence_score
+          END,
+          summary_json = ?,
+          updated_at = ?
+        WHERE site_url = ?
+      `
+    )
+      .bind(
+        input.gscLastUpdatedAt,
+        safeJsonStringify({
+          sources: {
+            gsc: {
+              last_updated_at: input.gscLastUpdatedAt,
+              status: 'fresh'
+            }
+          }
+        }),
+        now,
+        input.siteUrl
+      )
+      .run();
+
+    return;
+  }
+
+  await db.prepare(
+    `
+      INSERT INTO site_freshness_summaries (
+        site_url,
+        pagespeed_last_updated_at,
+        gsc_last_updated_at,
+        ga4_last_updated_at,
+        trends_last_updated_at,
+        indexnow_last_updated_at,
+        overall_freshness_status,
+        freshness_confidence_score,
+        summary_json,
+        created_at,
+        updated_at
+      )
+      VALUES (?, NULL, ?, NULL, NULL, NULL, 'fresh', 0.5, ?, ?, ?)
+    `
+  )
+    .bind(
+      input.siteUrl,
+      input.gscLastUpdatedAt,
+      safeJsonStringify({
+        sources: {
+          gsc: {
+            last_updated_at: input.gscLastUpdatedAt,
+            status: 'fresh'
+          }
+        }
+      }),
+      now,
+      now
+    )
+    .run();
+}
 async function insertGscCountryMetrics(db, rows, snapshotId) {
   if (!rows.length) {
     return;
