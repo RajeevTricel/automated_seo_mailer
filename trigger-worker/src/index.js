@@ -15,35 +15,35 @@ export default {
       const url = new URL(request.url);
 
       if (url.pathname === '/trigger') {
-        return handleTrigger(request, env, corsHeaders);
+        return await handleTrigger(request, env, corsHeaders);
       }
 
       if (url.pathname === '/api/ingest-run') {
-        return handleIngestRun(request, env, corsHeaders);
+        return await handleIngestRun(request, env, corsHeaders);
       }
 
       if (url.pathname === '/api/ingest-gsc') {
-        return handleIngestGsc(request, env, corsHeaders);
+        return await handleIngestGsc(request, env, corsHeaders);
       }
 
       if (url.pathname === '/api/latest-run') {
-        return handleLatestRun(request, env, corsHeaders);
+        return await handleLatestRun(request, env, corsHeaders);
       }
 
       if (url.pathname === '/api/sites') {
-        return handleSites(request, env, corsHeaders);
+        return await handleSites(request, env, corsHeaders);
       }
 
       if (url.pathname === '/api/site-overview') {
-        return handleSiteOverview(request, env, corsHeaders);
+        return await handleSiteOverview(request, env, corsHeaders);
       }
 
       if (url.pathname === '/api/site-pagespeed') {
-        return handleSitePagespeed(request, env, corsHeaders);
+        return await handleSitePagespeed(request, env, corsHeaders);
       }
 
       if (url.pathname === '/api/site-extractions') {
-        return handleSiteExtractions(request, env, corsHeaders);
+        return await handleSiteExtractions(request, env, corsHeaders);
       }
 
       return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
