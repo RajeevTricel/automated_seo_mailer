@@ -4,42 +4,61 @@ export default {
   async fetch(request, env) {
     const corsHeaders = buildCorsHeaders(request, env);
 
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders
-      });
-    }
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: corsHeaders
+        });
+      }
 
-    const url = new URL(request.url);
+      const url = new URL(request.url);
 
-    if (url.pathname === '/trigger') {
-      return handleTrigger(request, env, corsHeaders);
-    }
+      if (url.pathname === '/trigger') {
+        return handleTrigger(request, env, corsHeaders);
+      }
 
-    if (url.pathname === '/api/ingest-run') {
-      return handleIngestRun(request, env, corsHeaders);
-    }
+      if (url.pathname === '/api/ingest-run') {
+        return handleIngestRun(request, env, corsHeaders);
+      }
 
-    if (url.pathname === '/api/latest-run') {
-      return handleLatestRun(request, env, corsHeaders);
+      if (url.pathname === '/api/ingest-gsc') {
+        return handleIngestGsc(request, env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/latest-run') {
+        return handleLatestRun(request, env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/sites') {
+        return handleSites(request, env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/site-overview') {
+        return handleSiteOverview(request, env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/site-pagespeed') {
+        return handleSitePagespeed(request, env, corsHeaders);
+      }
+
+      if (url.pathname === '/api/site-extractions') {
+        return handleSiteExtractions(request, env, corsHeaders);
+      }
+
+      return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
+    } catch (error) {
+      return json(
+        {
+          ok: false,
+          message: 'Worker exception',
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : null
+        },
+        500,
+        corsHeaders
+      );
     }
-    if (url.pathname === '/api/sites') {
-      return handleSites(request, env, corsHeaders);
-    }
-    if (url.pathname === '/api/site-overview') {
-      return handleSiteOverview(request, env, corsHeaders);
-    }
-    if (url.pathname === '/api/site-pagespeed') {
-      return handleSitePagespeed(request, env, corsHeaders);
-    }
-    if (url.pathname === '/api/site-extractions') {
-      return handleSiteExtractions(request, env, corsHeaders);
-    }
-    if (url.pathname === '/api/ingest-gsc') {
-      return handleIngestGsc(request, env, corsHeaders);
-    }
-    return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
   }
 };
 
