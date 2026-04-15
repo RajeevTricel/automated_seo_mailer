@@ -36,9 +36,9 @@ export default {
     if (url.pathname === '/api/site-extractions') {
       return handleSiteExtractions(request, env, corsHeaders);
     }
-
-
-
+    if (url.pathname === '/api/ingest-gsc') {
+      return handleIngestGsc(request, env, corsHeaders);
+    }
     return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
   }
 };
@@ -276,6 +276,382 @@ async function handleIngestRun(request, env, corsHeaders) {
     );
   }
 }
+
+async function handleIngestGsc(request, env, corsHeaders) {
+  if (request.method !== 'POST') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const expectedSecret =
+    asNullableString(env.GSC_INGEST_SHARED_SECRET) ||
+    asNullableString(env.INGEST_SHARED_SECRET);
+
+  if (!expectedSecret) {
+    return json(
+      { ok: false, message: 'Missing GSC_INGEST_SHARED_SECRET or INGEST_SHARED_SECRET secret' },
+      500,
+      corsHeaders
+    );
+  }
+
+  const providedSecret = request.headers.get('x-ingest-secret') || '';
+  if (!providedSecret || providedSecret !== expectedSecret) {
+    return json({ ok: false, message: 'Invalid ingest secret' }, 401, corsHeaders);
+  }
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, message: 'Invalid JSON body' }, 400, corsHeaders);
+  }
+
+  const siteUrl = asNullableString(payload?.site_url);
+  const gscProperty = asNullableString(payload?.gsc_property);
+  const capturedAt = asNullableString(payload?.captured_at) || new Date().toISOString();
+  const periodStart = asNullableString(payload?.period_start);
+  const periodEnd = asNullableString(payload?.period_end);
+  const importMode = asNullableString(payload?.import_mode) || 'api';
+  const source = 'gsc';
+
+  if (!siteUrl || !gscProperty || !periodStart || !periodEnd) {
+    return json(
+      {
+        ok: false,
+        message: 'Missing required fields',
+        required: ['site_url', 'gsc_property', 'period_start', 'period_end']
+      },
+      400,
+      corsHeaders
+    );
+  }
+
+  const modules = isObject(payload?.modules) ? payload.modules : {};
+
+  const queryMetrics = normalizeInboundGscQueryMetrics(
+    Array.isArray(modules.query_metrics) ? modules.query_metrics : [],
+    siteUrl,
+    periodEnd
+  );
+  const pageMetrics = normalizeInboundGscPageMetrics(
+    Array.isArray(modules.page_metrics) ? modules.page_metrics : [],
+    siteUrl,
+    periodEnd
+  );
+  const countryMetrics = normalizeInboundGscCountryMetrics(
+    Array.isArray(modules.country_metrics) ? modules.country_metrics : [],
+    siteUrl,
+    periodEnd
+  );
+  const deviceMetrics = normalizeInboundGscDeviceMetrics(
+    Array.isArray(modules.device_metrics) ? modules.device_metrics : [],
+    siteUrl,
+    periodEnd
+  );
+
+  const totalRowCount =
+    queryMetrics.length +
+    pageMetrics.length +
+    countryMetrics.length +
+    deviceMetrics.length;
+
+  try {
+    const snapshotIds = {};
+
+    if (queryMetrics.length) {
+      snapshotIds.query_metrics = await insertSourceSnapshot(env.DB, {
+        siteUrl,
+        source,
+        module: 'query_metrics',
+        capturedAt,
+        periodStart,
+        periodEnd,
+        importMode,
+        parseStatus: 'success',
+        normalizedRowCount: queryMetrics.length,
+        freshnessStatus: 'fresh',
+        notes: `Property: ${gscProperty}`
+      });
+
+      await insertGscQueryMetrics(env.DB, queryMetrics, snapshotIds.query_metrics);
+    }
+
+    if (pageMetrics.length) {
+      snapshotIds.page_metrics = await insertSourceSnapshot(env.DB, {
+        siteUrl,
+        source,
+        module: 'page_metrics',
+        capturedAt,
+        periodStart,
+        periodEnd,
+        importMode,
+        parseStatus: 'success',
+        normalizedRowCount: pageMetrics.length,
+        freshnessStatus: 'fresh',
+        notes: `Property: ${gscProperty}`
+      });
+
+      await insertGscPageMetrics(env.DB, pageMetrics, snapshotIds.page_metrics);
+    }
+
+    if (countryMetrics.length) {
+      snapshotIds.country_metrics = await insertSourceSnapshot(env.DB, {
+        siteUrl,
+        source,
+        module: 'country_metrics',
+        capturedAt,
+        periodStart,
+        periodEnd,
+        importMode,
+        parseStatus: 'success',
+        normalizedRowCount: countryMetrics.length,
+        freshnessStatus: 'fresh',
+        notes: `Property: ${gscProperty}`
+      });
+
+      await insertGscCountryMetrics(env.DB, countryMetrics, snapshotIds.country_metrics);
+    }
+
+    if (deviceMetrics.length) {
+      snapshotIds.device_metrics = await insertSourceSnapshot(env.DB, {
+        siteUrl,
+        source,
+        module: 'device_metrics',
+        capturedAt,
+        periodStart,
+        periodEnd,
+        importMode,
+        parseStatus: 'success',
+        normalizedRowCount: deviceMetrics.length,
+        freshnessStatus: 'fresh',
+        notes: `Property: ${gscProperty}`
+      });
+
+      await insertGscDeviceMetrics(env.DB, deviceMetrics, snapshotIds.device_metrics);
+    }
+
+    await upsertGscFreshnessSummary(env.DB, {
+      siteUrl,
+      gscLastUpdatedAt: capturedAt
+    });
+
+    return json(
+      {
+        ok: true,
+        source: 'gsc',
+        site_url: siteUrl,
+        gsc_property: gscProperty,
+        captured_at: capturedAt,
+        period_start: periodStart,
+        period_end: periodEnd,
+        snapshot_ids: snapshotIds,
+        inserted: {
+          query_metrics: queryMetrics.length,
+          page_metrics: pageMetrics.length,
+          country_metrics: countryMetrics.length,
+          device_metrics: deviceMetrics.length,
+          total: totalRowCount
+        }
+      },
+      200,
+      corsHeaders
+    );
+  } catch (error) {
+    return json(
+      {
+        ok: false,
+        message: 'GSC ingest failed',
+        error: error instanceof Error ? error.message : String(error)
+      },
+      500,
+      corsHeaders
+    );
+  }
+}
+
+async function insertSourceSnapshot(db, snapshot) {
+  const result = await db.prepare(
+    `
+      INSERT INTO source_snapshots (
+        site_url,
+        source,
+        module,
+        captured_at,
+        period_start,
+        period_end,
+        import_mode,
+        parse_status,
+        normalized_row_count,
+        freshness_status,
+        notes,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  )
+    .bind(
+      snapshot.siteUrl,
+      snapshot.source,
+      snapshot.module,
+      snapshot.capturedAt,
+      snapshot.periodStart,
+      snapshot.periodEnd,
+      snapshot.importMode,
+      snapshot.parseStatus,
+      snapshot.normalizedRowCount,
+      snapshot.freshnessStatus,
+      snapshot.notes,
+      new Date().toISOString()
+    )
+    .run();
+
+  const snapshotId = result?.meta?.last_row_id;
+  if (!snapshotId) {
+    throw new Error(`Failed to create source snapshot for module: ${snapshot.module}`);
+  }
+
+  return snapshotId;
+}
+
+function normalizeInboundGscQueryMetrics(rows, siteUrl, fallbackDate) {
+  return rows
+    .map((row) => ({
+      site_url: siteUrl,
+      date: asNullableString(row?.date) || fallbackDate,
+      query: asNullableString(row?.query),
+      page: asNullableString(row?.page),
+      country: asNullableString(row?.country),
+      device: normalizeDevice(row?.device),
+      clicks: toNumber(row?.clicks),
+      impressions: toNumber(row?.impressions),
+      ctr: toNumber(row?.ctr),
+      position: toNumber(row?.position)
+    }))
+    .filter((row) => row.query && row.date);
+}
+
+function normalizeInboundGscPageMetrics(rows, siteUrl, fallbackDate) {
+  return rows
+    .map((row) => ({
+      site_url: siteUrl,
+      date: asNullableString(row?.date) || fallbackDate,
+      page: asNullableString(row?.page),
+      clicks: toNumber(row?.clicks),
+      impressions: toNumber(row?.impressions),
+      ctr: toNumber(row?.ctr),
+      position: toNumber(row?.position)
+    }))
+    .filter((row) => row.page && row.date);
+}
+
+function normalizeInboundGscCountryMetrics(rows, siteUrl, fallbackDate) {
+  return rows
+    .map((row) => ({
+      site_url: siteUrl,
+      date: asNullableString(row?.date) || fallbackDate,
+      country: asNullableString(row?.country),
+      clicks: toNumber(row?.clicks),
+      impressions: toNumber(row?.impressions),
+      ctr: toNumber(row?.ctr),
+      position: toNumber(row?.position)
+    }))
+    .filter((row) => row.country && row.date);
+}
+
+function normalizeInboundGscDeviceMetrics(rows, siteUrl, fallbackDate) {
+  return rows
+    .map((row) => ({
+      site_url: siteUrl,
+      date: asNullableString(row?.date) || fallbackDate,
+      device: normalizeDevice(row?.device),
+      clicks: toNumber(row?.clicks),
+      impressions: toNumber(row?.impressions),
+      ctr: toNumber(row?.ctr),
+      position: toNumber(row?.position)
+    }))
+    .filter((row) => row.device && row.date);
+}
+
+async function insertGscQueryMetrics(db, rows, snapshotId) {
+  if (!rows.length) {
+    return;
+  }
+
+  const statements = rows.map((row) =>
+    db.prepare(
+      `
+        INSERT INTO gsc_query_metrics (
+          site_url,
+          snapshot_id,
+          date,
+          query,
+          page,
+          country,
+          device,
+          clicks,
+          impressions,
+          ctr,
+          position,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(site_url, date, query, IFNULL(page, ''), IFNULL(country, ''), IFNULL(device, ''))
+        DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          clicks = excluded.clicks,
+          impressions = excluded.impressions,
+          ctr = excluded.ctr,
+          position = excluded.position,
+          created_at = excluded.created_at
+      `
+    ).bind(
+      row.site_url,
+      snapshotId,
+      row.date,
+      row.query,
+      row.page,
+      row.country,
+      row.device,
+      row.clicks,
+      row.impressions,
+      row.ctr,
+      row.position,
+      new Date().toISOString()
+    )
+  );
+
+  await executeBatches(db, statements, 50);
+}
+
+async function insertGscPageMetrics(db, rows, snapshotId) {
+  if (!rows.length) {
+    return;
+  }
+
+  const statements = rows.map((row) =>
+    db.prepare(
+      `
+        INSERT INTO gsc_page_metrics (
+          site_url,
+          snapshot_id,
+          date,
+          page,
+          clicks,
+          impressions,
+          ctr,
+          position,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(site_url, date, page)
+        DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          clicks = excluded.clicks,
+     
 
 async function handleLatestRun(request, env, corsHeaders) {
   if (request.method !== 'GET') {
