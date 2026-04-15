@@ -662,6 +662,10 @@ function normalizeDevice(value) {
 
   return normalized;
 }
+function toNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
 function normalizeInboundGscQueryMetrics(rows, siteUrl, fallbackDate) {
   return rows
     .map((row) => ({
