@@ -45,6 +45,9 @@ export default {
       if (url.pathname === '/api/site-extractions') {
         return await handleSiteExtractions(request, env, corsHeaders);
       }
+      if (url.pathname === '/api/site-source-mappings') {
+        return await handleSiteSourceMappings(request, env, corsHeaders);
+      }
 
       return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
     } catch (error) {
@@ -127,7 +130,75 @@ async function handleTrigger(request, env, corsHeaders) {
     corsHeaders
   );
 }
+async function handleSiteSourceMappings(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
 
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const expectedSecret =
+    asNullableString(env.GSC_INGEST_SHARED_SECRET) ||
+    asNullableString(env.INGEST_SHARED_SECRET);
+
+  if (!expectedSecret) {
+    return json(
+      { ok: false, message: 'Missing GSC_INGEST_SHARED_SECRET or INGEST_SHARED_SECRET secret' },
+      500,
+      corsHeaders
+    );
+  }
+
+  const providedSecret = request.headers.get('x-ingest-secret') || '';
+  if (!providedSecret || providedSecret !== expectedSecret) {
+    return json({ ok: false, message: 'Invalid ingest secret' }, 401, corsHeaders);
+  }
+
+  const url = new URL(request.url);
+  const source = asNullableString(url.searchParams.get('source')) || 'all';
+
+  let whereClause = `WHERE is_active = 1`;
+  if (source === 'gsc') {
+    whereClause += ` AND gsc_property IS NOT NULL AND TRIM(gsc_property) != ''`;
+  } else if (source === 'ga4') {
+    whereClause += ` AND ga4_property_id IS NOT NULL AND TRIM(ga4_property_id) != ''`;
+  }
+
+  const result = await env.DB.prepare(
+    `
+      SELECT
+        id,
+        site_url,
+        display_name,
+        group_name,
+        gsc_property,
+        ga4_property_id,
+        trends_topic_label,
+        indexnow_host_key,
+        is_active,
+        created_at,
+        updated_at
+      FROM site_source_mappings
+      ${whereClause}
+      ORDER BY group_name ASC, display_name ASC, site_url ASC
+    `
+  ).all();
+
+  const sites = Array.isArray(result?.results) ? result.results : [];
+
+  return json(
+    {
+      ok: true,
+      source,
+      count: sites.length,
+      sites
+    },
+    200,
+    corsHeaders
+  );
+}
 async function handleLatestRun(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
