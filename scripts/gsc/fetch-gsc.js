@@ -38,12 +38,37 @@ function assertIsoDate(value, fieldName) {
 }
 
 function normalizePrivateKey(raw) {
-  return raw.replace(/\\n/g, '\n');
+  return String(raw || '').replace(/\\n/g, '\n').trim();
 }
 
 function buildJwtClient() {
-  const clientEmail = requireEnv('GSC_CLIENT_EMAIL');
-  const privateKey = normalizePrivateKey(requireEnv('GSC_PRIVATE_KEY'));
+  const rawJson = requireEnv('GSC_SERVICE_ACCOUNT_JSON');
+
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(rawJson);
+  } catch (error) {
+    throw new Error(
+      `GSC_SERVICE_ACCOUNT_JSON is not valid JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  const clientEmail = String(serviceAccount.client_email || '').trim();
+  const privateKey = normalizePrivateKey(serviceAccount.private_key);
+
+  if (!clientEmail) {
+    throw new Error('GSC_SERVICE_ACCOUNT_JSON is missing client_email');
+  }
+
+  if (!privateKey) {
+    throw new Error('GSC_SERVICE_ACCOUNT_JSON is missing private_key');
+  }
+
+  if (!privateKey.includes('BEGIN PRIVATE KEY') || !privateKey.includes('END PRIVATE KEY')) {
+    throw new Error('GSC_SERVICE_ACCOUNT_JSON.private_key is not a valid PEM private key');
+  }
 
   return new google.auth.JWT({
     email: clientEmail,
