@@ -20,6 +20,14 @@ on:
         options:
           - "true"
           - "false"
+      run_gsc_all:
+        description: "Run GSC ingestion for all mapped active sites"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
       site_url:
         description: "Canonical site URL from site_source_mappings"
         required: false
@@ -50,7 +58,6 @@ on:
           - "false"
   schedule:
     - cron: "37 8 * * *"
-      timezone: "Europe/Dublin"
 
 permissions:
   contents: read
@@ -178,6 +185,7 @@ jobs:
         run: |
           cat <<'EOF' > gsc-run-summary.json
           {
+            "mode": "single-site",
             "site_url": "${{ github.event.inputs.site_url }}",
             "gsc_property": "${{ github.event.inputs.gsc_property }}",
             "start_date": "${{ github.event.inputs.start_date }}",
@@ -192,7 +200,161 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shadow-gsc-run-${{ github.run_id }}
+          name: shadow-gsc-single-site-${{ github.run_id }}
           path: gsc-run-summary.json
           if-no-files-found: error
           retention-days: 7
+
+  ingest-gsc-all-sites:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_gsc_all == 'true')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Resolve GSC date window and mappings URL
+        env:
+          INPUT_START_DATE: ${{ github.event.inputs.start_date }}
+          INPUT_END_DATE: ${{ github.event.inputs.end_date }}
+          GSC_INGEST_URL: ${{ vars.SHADOW_GSC_INGEST_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_END_DATE}" ]; then
+            END_DATE="${INPUT_END_DATE}"
+          else
+            END_DATE="$(date -u -d 'yesterday' +%F)"
+          fi
+
+          if [ -n "${INPUT_START_DATE}" ]; then
+            START_DATE="${INPUT_START_DATE}"
+          else
+            START_DATE="$(date -u -d "${END_DATE} -27 days" +%F)"
+          fi
+
+          MAPPINGS_URL="${GSC_INGEST_URL%/api/ingest-gsc}/api/site-source-mappings?source=gsc"
+
+          echo "START_DATE=${START_DATE}" >> "$GITHUB_ENV"
+          echo "END_DATE=${END_DATE}" >> "$GITHUB_ENV"
+          echo "MAPPINGS_URL=${MAPPINGS_URL}" >> "$GITHUB_ENV"
+
+          echo "Resolved START_DATE=${START_DATE}"
+          echo "Resolved END_DATE=${END_DATE}"
+          echo "Resolved MAPPINGS_URL=${MAPPINGS_URL}"
+
+      - name: Fetch mapped active GSC sites
+        env:
+          MAPPINGS_URL: ${{ env.MAPPINGS_URL }}
+          SHADOW_INGEST_SECRET: ${{ secrets.SHADOW_INGEST_SECRET }}
+        run: |
+          set -euo pipefail
+
+          curl --fail-with-body --silent --show-error \
+            -H "x-ingest-secret: ${SHADOW_INGEST_SECRET}" \
+            "${MAPPINGS_URL}" \
+            > gsc-sites.json
+
+          jq '.' gsc-sites.json
+          jq -e '.ok == true' gsc-sites.json > /dev/null
+
+          SITE_COUNT="$(jq '.count' gsc-sites.json)"
+          echo "Mapped active GSC sites: ${SITE_COUNT}"
+
+          test "${SITE_COUNT}" -gt 0
+
+      - name: Run GSC fetch and ingest for all mapped sites
+        env:
+          GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
+          GSC_INGEST_URL: ${{ vars.SHADOW_GSC_INGEST_URL }}
+          GSC_INGEST_SECRET: ${{ secrets.SHADOW_INGEST_SECRET }}
+          START_DATE: ${{ env.START_DATE }}
+          END_DATE: ${{ env.END_DATE }}
+          DRY_RUN: "false"
+        run: |
+          set -euo pipefail
+
+          : > gsc-failures.txt
+          : > gsc-successes.txt
+
+          FAILURES=0
+          SUCCESSES=0
+
+          while IFS= read -r row; do
+            SITE_URL="$(echo "${row}" | jq -r '.site_url')"
+            GSC_PROPERTY="$(echo "${row}" | jq -r '.gsc_property')"
+            DISPLAY_NAME="$(echo "${row}" | jq -r '.display_name // .site_url')"
+
+            if [ -z "${SITE_URL}" ] || [ "${SITE_URL}" = "null" ]; then
+              continue
+            fi
+
+            if [ -z "${GSC_PROPERTY}" ] || [ "${GSC_PROPERTY}" = "null" ]; then
+              continue
+            fi
+
+            echo "::group::GSC ingest - ${DISPLAY_NAME} (${SITE_URL})"
+
+            set +e
+            SITE_URL="${SITE_URL}" \
+            GSC_PROPERTY="${GSC_PROPERTY}" \
+            SEARCH_TYPE="web" \
+            ROW_LIMIT="25000" \
+            node scripts/gsc/fetch-gsc.js
+            EXIT_CODE=$?
+            set -e
+
+            if [ "${EXIT_CODE}" -ne 0 ]; then
+              FAILURES=$((FAILURES + 1))
+              printf '%s\t%s\n' "${SITE_URL}" "${GSC_PROPERTY}" >> gsc-failures.txt
+            else
+              SUCCESSES=$((SUCCESSES + 1))
+              printf '%s\t%s\n' "${SITE_URL}" "${GSC_PROPERTY}" >> gsc-successes.txt
+            fi
+
+            echo "::endgroup::"
+          done < <(jq -c '.sites[]' gsc-sites.json)
+
+          jq -n \
+            --arg start_date "${START_DATE}" \
+            --arg end_date "${END_DATE}" \
+            --argjson successes "${SUCCESSES}" \
+            --argjson failures "${FAILURES}" \
+            '{
+              mode: "all-sites",
+              start_date: $start_date,
+              end_date: $end_date,
+              success_count: $successes,
+              failure_count: $failures
+            }' > gsc-all-run-summary.json
+
+          cat gsc-all-run-summary.json
+
+          if [ "${FAILURES}" -gt 0 ]; then
+            echo "Some GSC ingests failed:"
+            cat gsc-failures.txt
+            exit 1
+          fi
+
+      - name: Upload GSC all-sites artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-gsc-all-sites-${{ github.run_id }}
+          path: |
+            gsc-sites.json
+            gsc-all-run-summary.json
+            gsc-successes.txt
+            gsc-failures.txt
+          if-no-files-found: warn
+          retention-days: 7
+
