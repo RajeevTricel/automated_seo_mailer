@@ -472,6 +472,95 @@ async function handleIngestGsc(request, env, corsHeaders) {
     );
   }
 }
+async function insertGscCountryMetrics(db, rows, snapshotId) {
+  if (!rows.length) {
+    return;
+  }
+
+  const statements = rows.map((row) =>
+    db.prepare(
+      `
+        INSERT INTO gsc_country_metrics (
+          site_url,
+          snapshot_id,
+          date,
+          country,
+          clicks,
+          impressions,
+          ctr,
+          position,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(site_url, date, country)
+        DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          clicks = excluded.clicks,
+          impressions = excluded.impressions,
+          ctr = excluded.ctr,
+          position = excluded.position,
+          created_at = excluded.created_at
+      `
+    ).bind(
+      row.site_url,
+      snapshotId,
+      row.date,
+      row.country,
+      row.clicks,
+      row.impressions,
+      row.ctr,
+      row.position,
+      new Date().toISOString()
+    )
+  );
+
+  await executeBatches(db, statements, 50);
+}
+
+async function insertGscDeviceMetrics(db, rows, snapshotId) {
+  if (!rows.length) {
+    return;
+  }
+
+  const statements = rows.map((row) =>
+    db.prepare(
+      `
+        INSERT INTO gsc_device_metrics (
+          site_url,
+          snapshot_id,
+          date,
+          device,
+          clicks,
+          impressions,
+          ctr,
+          position,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(site_url, date, device)
+        DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          clicks = excluded.clicks,
+          impressions = excluded.impressions,
+          ctr = excluded.ctr,
+          position = excluded.position,
+          created_at = excluded.created_at
+      `
+    ).bind(
+      row.site_url,
+      snapshotId,
+      row.date,
+      row.device,
+      row.clicks,
+      row.impressions,
+      row.ctr,
+      row.position,
+      new Date().toISOString()
+    )
+  );
+
+  await executeBatches(db, statements, 50);
+}
 
 async function insertSourceSnapshot(db, snapshot) {
   const result = await db.prepare(
@@ -581,7 +670,30 @@ async function insertGscQueryMetrics(db, rows, snapshotId) {
     return;
   }
 
-  const statements = rows.map((row) =>
+  const deleteStatements = rows.map((row) =>
+    db.prepare(
+      `
+        DELETE FROM gsc_query_metrics
+        WHERE site_url = ?
+          AND date = ?
+          AND query = ?
+          AND COALESCE(page, '') = COALESCE(?, '')
+          AND COALESCE(country, '') = COALESCE(?, '')
+          AND COALESCE(device, '') = COALESCE(?, '')
+      `
+    ).bind(
+      row.site_url,
+      row.date,
+      row.query,
+      row.page,
+      row.country,
+      row.device
+    )
+  );
+
+  await executeBatches(db, deleteStatements, 50);
+
+  const insertStatements = rows.map((row) =>
     db.prepare(
       `
         INSERT INTO gsc_query_metrics (
@@ -599,14 +711,6 @@ async function insertGscQueryMetrics(db, rows, snapshotId) {
           created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(site_url, date, query, IFNULL(page, ''), IFNULL(country, ''), IFNULL(device, ''))
-        DO UPDATE SET
-          snapshot_id = excluded.snapshot_id,
-          clicks = excluded.clicks,
-          impressions = excluded.impressions,
-          ctr = excluded.ctr,
-          position = excluded.position,
-          created_at = excluded.created_at
       `
     ).bind(
       row.site_url,
@@ -624,7 +728,7 @@ async function insertGscQueryMetrics(db, rows, snapshotId) {
     )
   );
 
-  await executeBatches(db, statements, 50);
+  await executeBatches(db, insertStatements, 50);
 }
 
 async function insertGscPageMetrics(db, rows, snapshotId) {
@@ -651,32 +755,27 @@ async function insertGscPageMetrics(db, rows, snapshotId) {
         DO UPDATE SET
           snapshot_id = excluded.snapshot_id,
           clicks = excluded.clicks,
-     
-
-async function handleLatestRun(request, env, corsHeaders) {
-  if (request.method !== 'GET') {
-    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
-  }
-
-  if (!env.DB) {
-    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
-  }
-
-  const run = await getCurrentOrLatestSuccessfulRun(env.DB);
-
-  if (!run) {
-    return json({ ok: false, message: 'No runs found' }, 404, corsHeaders);
-  }
-
-  return json(
-    {
-      ok: true,
-      run
-    },
-    200,
-    corsHeaders
+          impressions = excluded.impressions,
+          ctr = excluded.ctr,
+          position = excluded.position,
+          created_at = excluded.created_at
+      `
+    ).bind(
+      row.site_url,
+      snapshotId,
+      row.date,
+      row.page,
+      row.clicks,
+      row.impressions,
+      row.ctr,
+      row.position,
+      new Date().toISOString()
+    )
   );
+
+  await executeBatches(db, statements, 50);
 }
+
 
 // trigger-worker/src/index.js
 async function insertSiteResults(db, rows) {
