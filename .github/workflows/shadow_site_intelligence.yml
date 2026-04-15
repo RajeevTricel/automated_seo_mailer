@@ -162,8 +162,7 @@ jobs:
       - name: Run GSC fetch and ingest
         run: node scripts/gsc/fetch-gsc.js
         env:
-          GSC_CLIENT_EMAIL: ${{ secrets.GSC_CLIENT_EMAIL }}
-          GSC_PRIVATE_KEY: ${{ secrets.GSC_PRIVATE_KEY }}
+          GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
           SITE_URL: ${{ github.event.inputs.site_url }}
           GSC_PROPERTY: ${{ github.event.inputs.gsc_property }}
           START_DATE: ${{ github.event.inputs.start_date }}
