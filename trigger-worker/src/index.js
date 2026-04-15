@@ -128,6 +128,31 @@ async function handleTrigger(request, env, corsHeaders) {
   );
 }
 
+async function handleLatestRun(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const run = await getCurrentOrLatestSuccessfulRun(env.DB);
+
+  if (!run) {
+    return json({ ok: false, message: 'No runs found' }, 404, corsHeaders);
+  }
+
+  return json(
+    {
+      ok: true,
+      run
+    },
+    200,
+    corsHeaders
+  );
+}
+
 async function handleIngestRun(request, env, corsHeaders) {
   if (request.method !== 'POST') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
