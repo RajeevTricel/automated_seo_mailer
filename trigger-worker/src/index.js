@@ -649,7 +649,19 @@ async function insertSourceSnapshot(db, snapshot) {
 
   return snapshotId;
 }
+function normalizeDevice(value) {
+  const normalized = asNullableString(value)?.toUpperCase() || null;
 
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === 'DESKTOP' || normalized === 'MOBILE' || normalized === 'TABLET') {
+    return normalized;
+  }
+
+  return normalized;
+}
 function normalizeInboundGscQueryMetrics(rows, siteUrl, fallbackDate) {
   return rows
     .map((row) => ({
