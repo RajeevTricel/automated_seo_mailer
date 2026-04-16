@@ -48,6 +48,9 @@ export default {
       if (url.pathname === '/api/site-source-mappings') {
         return await handleSiteSourceMappings(request, env, corsHeaders);
       }
+      if (url.pathname === '/api/gsc') {
+        return await handleSiteGsc(request, env, corsHeaders);
+      }
 
       return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
     } catch (error) {
@@ -130,6 +133,159 @@ async function handleTrigger(request, env, corsHeaders) {
     corsHeaders
   );
 }
+async function handleSiteGsc(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const url = new URL(request.url);
+  const site = asNullableString(url.searchParams.get('site'));
+
+  if (!site) {
+    return json({ ok: false, message: 'Missing required query param: site' }, 400, corsHeaders);
+  }
+
+  // Batch 1: latest snapshot metadata per module + freshness summary
+  const [qSnapResult, pSnapResult, cSnapResult, dSnapResult, freshnessResult] =
+    await env.DB.batch([
+      env.DB.prepare(
+        `SELECT id, module, captured_at, period_start, period_end, normalized_row_count, freshness_status
+         FROM source_snapshots
+         WHERE site_url = ? AND source = 'gsc' AND module = 'query_metrics'
+         ORDER BY captured_at DESC LIMIT 1`
+      ).bind(site),
+      env.DB.prepare(
+        `SELECT id, module, captured_at, period_start, period_end, normalized_row_count, freshness_status
+         FROM source_snapshots
+         WHERE site_url = ? AND source = 'gsc' AND module = 'page_metrics'
+         ORDER BY captured_at DESC LIMIT 1`
+      ).bind(site),
+      env.DB.prepare(
+        `SELECT id, module, captured_at, period_start, period_end, normalized_row_count, freshness_status
+         FROM source_snapshots
+         WHERE site_url = ? AND source = 'gsc' AND module = 'country_metrics'
+         ORDER BY captured_at DESC LIMIT 1`
+      ).bind(site),
+      env.DB.prepare(
+        `SELECT id, module, captured_at, period_start, period_end, normalized_row_count, freshness_status
+         FROM source_snapshots
+         WHERE site_url = ? AND source = 'gsc' AND module = 'device_metrics'
+         ORDER BY captured_at DESC LIMIT 1`
+      ).bind(site),
+      env.DB.prepare(
+        `SELECT gsc_last_updated_at, overall_freshness_status, freshness_confidence_score, updated_at
+         FROM site_freshness_summaries
+         WHERE site_url = ? LIMIT 1`
+      ).bind(site)
+    ]);
+
+  const querySnap   = qSnapResult?.results?.[0]    || null;
+  const pageSnap    = pSnapResult?.results?.[0]    || null;
+  const countrySnap = cSnapResult?.results?.[0]    || null;
+  const deviceSnap  = dSnapResult?.results?.[0]    || null;
+  const freshness   = freshnessResult?.results?.[0] || null;
+
+  if (!querySnap && !pageSnap && !countrySnap && !deviceSnap) {
+    return json({ ok: false, message: 'No GSC data found for site', site }, 404, corsHeaders);
+  }
+
+  // Use the most recent snapshot's period as the filter window
+  const refSnap = querySnap || pageSnap || countrySnap || deviceSnap;
+  const periodStart = refSnap.period_start;
+  const periodEnd   = refSnap.period_end;
+
+  // Batch 2: aggregated metric rows for that period
+  // CTR recomputed from SUM(clicks)/SUM(impressions) to avoid averaging per-row CTRs
+  const [topQueriesResult, topPagesResult, countriesResult, devicesResult] =
+    await env.DB.batch([
+      env.DB.prepare(
+        `SELECT
+           query,
+           SUM(clicks)      AS clicks,
+           SUM(impressions) AS impressions,
+           ROUND(CAST(SUM(clicks) AS REAL) / NULLIF(SUM(impressions), 0), 4) AS ctr,
+           ROUND(AVG(position), 1) AS position
+         FROM gsc_query_metrics
+         WHERE site_url = ? AND date >= ? AND date <= ?
+         GROUP BY query
+         ORDER BY impressions DESC
+         LIMIT 20`
+      ).bind(site, periodStart, periodEnd),
+      env.DB.prepare(
+        `SELECT
+           page,
+           SUM(clicks)      AS clicks,
+           SUM(impressions) AS impressions,
+           ROUND(CAST(SUM(clicks) AS REAL) / NULLIF(SUM(impressions), 0), 4) AS ctr,
+           ROUND(AVG(position), 1) AS position
+         FROM gsc_page_metrics
+         WHERE site_url = ? AND date >= ? AND date <= ?
+         GROUP BY page
+         ORDER BY impressions DESC
+         LIMIT 20`
+      ).bind(site, periodStart, periodEnd),
+      env.DB.prepare(
+        `SELECT
+           country,
+           SUM(clicks)      AS clicks,
+           SUM(impressions) AS impressions,
+           ROUND(CAST(SUM(clicks) AS REAL) / NULLIF(SUM(impressions), 0), 4) AS ctr,
+           ROUND(AVG(position), 1) AS position
+         FROM gsc_country_metrics
+         WHERE site_url = ? AND date >= ? AND date <= ?
+         GROUP BY country
+         ORDER BY impressions DESC`
+      ).bind(site, periodStart, periodEnd),
+      env.DB.prepare(
+        `SELECT
+           device,
+           SUM(clicks)      AS clicks,
+           SUM(impressions) AS impressions,
+           ROUND(CAST(SUM(clicks) AS REAL) / NULLIF(SUM(impressions), 0), 4) AS ctr,
+           ROUND(AVG(position), 1) AS position
+         FROM gsc_device_metrics
+         WHERE site_url = ? AND date >= ? AND date <= ?
+         GROUP BY device
+         ORDER BY impressions DESC`
+      ).bind(site, periodStart, periodEnd)
+    ]);
+
+  return json(
+    {
+      ok: true,
+      site,
+      period: {
+        start: periodStart,
+        end: periodEnd
+      },
+      snapshots: {
+        query_metrics:   querySnap,
+        page_metrics:    pageSnap,
+        country_metrics: countrySnap,
+        device_metrics:  deviceSnap
+      },
+      freshness: freshness
+        ? {
+            gsc_last_updated_at:        freshness.gsc_last_updated_at,
+            overall_freshness_status:   freshness.overall_freshness_status,
+            freshness_confidence_score: freshness.freshness_confidence_score,
+            updated_at:                 freshness.updated_at
+          }
+        : null,
+      top_queries: Array.isArray(topQueriesResult?.results) ? topQueriesResult.results : [],
+      top_pages:   Array.isArray(topPagesResult?.results)   ? topPagesResult.results   : [],
+      countries:   Array.isArray(countriesResult?.results)  ? countriesResult.results  : [],
+      devices:     Array.isArray(devicesResult?.results)    ? devicesResult.results    : []
+    },
+    200,
+    corsHeaders
+  );
+}
+
 async function handleSiteSourceMappings(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
