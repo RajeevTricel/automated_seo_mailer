@@ -694,6 +694,12 @@ async function handleIngestRun(request, env, corsHeaders) {
       .bind(new Date().toISOString(), normalized.siteCount, normalized.strategyCount, runId)
       .run();
 
+    const uniqueSiteUrls = [...new Set(normalized.siteResults.map((r) => r.site_url))];
+    const freshnessAt = snapshotGeneratedAt || createdAt;
+    for (const siteUrl of uniqueSiteUrls) {
+      await upsertPagespeedFreshnessSummary(env.DB, siteUrl, freshnessAt);
+    }
+
     return json(
       {
         ok: true,
@@ -916,6 +922,42 @@ async function handleIngestGsc(request, env, corsHeaders) {
     );
   }
 }
+
+async function upsertPagespeedFreshnessSummary(db, siteUrl, capturedAt) {
+  const now = new Date().toISOString();
+
+  const existing = await db.prepare(
+    `SELECT id FROM site_freshness_summaries WHERE site_url = ? LIMIT 1`
+  ).bind(siteUrl).first();
+
+  if (existing?.id) {
+    await db.prepare(
+      `UPDATE site_freshness_summaries
+       SET pagespeed_last_updated_at = ?,
+           overall_freshness_status = 'fresh',
+           updated_at = ?
+       WHERE site_url = ?`
+    ).bind(capturedAt, now, siteUrl).run();
+    return;
+  }
+
+  await db.prepare(
+    `INSERT INTO site_freshness_summaries (
+       site_url, pagespeed_last_updated_at, gsc_last_updated_at,
+       ga4_last_updated_at, trends_last_updated_at, indexnow_last_updated_at,
+       overall_freshness_status, freshness_confidence_score,
+       summary_json, created_at, updated_at
+     )
+     VALUES (?, ?, NULL, NULL, NULL, NULL, 'fresh', 0.5, ?, ?, ?)`
+  ).bind(
+    siteUrl,
+    capturedAt,
+    JSON.stringify({ sources: { pagespeed: { last_updated_at: capturedAt, status: 'fresh' } } }),
+    now,
+    now
+  ).run();
+}
+
 async function upsertGscFreshnessSummary(db, input) {
   const now = new Date().toISOString();
 
