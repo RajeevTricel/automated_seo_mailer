@@ -51,6 +51,9 @@ export default {
       if (url.pathname === '/api/gsc') {
         return await handleSiteGsc(request, env, corsHeaders);
       }
+      if (url.pathname === '/api/site-summary') {
+        return await handleSiteSummary(request, env, corsHeaders);
+      }
 
       return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
     } catch (error) {
@@ -133,6 +136,176 @@ async function handleTrigger(request, env, corsHeaders) {
     corsHeaders
   );
 }
+
+async function handleSiteSummary(request, env, corsHeaders) {
+  if (request.method !== 'GET') {
+    return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  if (!env.DB) {
+    return json({ ok: false, message: 'Missing DB binding' }, 500, corsHeaders);
+  }
+
+  const url = new URL(request.url);
+  const site = asNullableString(url.searchParams.get('site'));
+
+  if (!site) {
+    return json({ ok: false, message: 'Missing required query param: site' }, 400, corsHeaders);
+  }
+
+  // Step 1: get current PageSpeed run
+  const run = await getCurrentOrLatestSuccessfulRun(env.DB);
+
+  // Step 2: batch - PageSpeed scores + GSC snapshots + freshness in one round-trip
+  const [psResult, qSnapResult, pSnapResult, dSnapResult, freshnessResult] =
+    await env.DB.batch([
+      env.DB.prepare(
+        `SELECT strategy, performance_score, accessibility_score, best_practices_score, seo_score, created_at
+         FROM site_results
+         WHERE run_id = ? AND site_url = ?
+         ORDER BY CASE strategy WHEN 'desktop' THEN 1 WHEN 'mobile' THEN 2 ELSE 99 END`
+      ).bind(run ? run.id : '', site),
+      env.DB.prepare(
+        `SELECT id, captured_at, period_start, period_end, freshness_status
+         FROM source_snapshots
+         WHERE site_url = ? AND source = 'gsc' AND module = 'query_metrics'
+         ORDER BY captured_at DESC LIMIT 1`
+      ).bind(site),
+      env.DB.prepare(
+        `SELECT id, captured_at, period_start, period_end, freshness_status
+         FROM source_snapshots
+         WHERE site_url = ? AND source = 'gsc' AND module = 'page_metrics'
+         ORDER BY captured_at DESC LIMIT 1`
+      ).bind(site),
+      env.DB.prepare(
+        `SELECT id, captured_at, period_start, period_end, freshness_status
+         FROM source_snapshots
+         WHERE site_url = ? AND source = 'gsc' AND module = 'device_metrics'
+         ORDER BY captured_at DESC LIMIT 1`
+      ).bind(site),
+      env.DB.prepare(
+        `SELECT pagespeed_last_updated_at, gsc_last_updated_at, overall_freshness_status, freshness_confidence_score, updated_at
+         FROM site_freshness_summaries
+         WHERE site_url = ? LIMIT 1`
+      ).bind(site)
+    ]);
+
+  const psRows     = Array.isArray(psResult?.results)      ? psResult.results      : [];
+  const querySnap  = qSnapResult?.results?.[0]             || null;
+  const pageSnap   = pSnapResult?.results?.[0]             || null;
+  const deviceSnap = dSnapResult?.results?.[0]             || null;
+  const freshness  = freshnessResult?.results?.[0]         || null;
+
+  // Build PageSpeed payload
+  const pagespeedStrategies = {};
+  for (const row of psRows) {
+    pagespeedStrategies[row.strategy] = {
+      scores: {
+        performance:    row.performance_score,
+        accessibility:  row.accessibility_score,
+        best_practices: row.best_practices_score,
+        seo:            row.seo_score
+      },
+      captured_at: row.created_at
+    };
+  }
+
+  // Step 3: if GSC snapshots exist, fetch summarised metric rows
+  let gscSummary = null;
+  const refSnap = querySnap || pageSnap || deviceSnap;
+
+  if (refSnap) {
+    const periodStart = refSnap.period_start;
+    const periodEnd   = refSnap.period_end;
+
+    const [topQueriesResult, topPagesResult, devicesResult] = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT query,
+                SUM(clicks)      AS clicks,
+                SUM(impressions) AS impressions,
+                ROUND(CAST(SUM(clicks) AS REAL) / NULLIF(SUM(impressions), 0), 4) AS ctr,
+                ROUND(AVG(position), 1) AS position
+         FROM gsc_query_metrics
+         WHERE site_url = ? AND date >= ? AND date <= ?
+         GROUP BY query
+         ORDER BY impressions DESC
+         LIMIT 5`
+      ).bind(site, periodStart, periodEnd),
+      env.DB.prepare(
+        `SELECT page,
+                SUM(clicks)      AS clicks,
+                SUM(impressions) AS impressions,
+                ROUND(CAST(SUM(clicks) AS REAL) / NULLIF(SUM(impressions), 0), 4) AS ctr,
+                ROUND(AVG(position), 1) AS position
+         FROM gsc_page_metrics
+         WHERE site_url = ? AND date >= ? AND date <= ?
+         GROUP BY page
+         ORDER BY impressions DESC
+         LIMIT 5`
+      ).bind(site, periodStart, periodEnd),
+      env.DB.prepare(
+        `SELECT device,
+                SUM(clicks)      AS clicks,
+                SUM(impressions) AS impressions,
+                ROUND(CAST(SUM(clicks) AS REAL) / NULLIF(SUM(impressions), 0), 4) AS ctr,
+                ROUND(AVG(position), 1) AS position
+         FROM gsc_device_metrics
+         WHERE site_url = ? AND date >= ? AND date <= ?
+         GROUP BY device
+         ORDER BY impressions DESC`
+      ).bind(site, periodStart, periodEnd)
+    ]);
+
+    const topQueries = Array.isArray(topQueriesResult?.results) ? topQueriesResult.results : [];
+    const topPages   = Array.isArray(topPagesResult?.results)   ? topPagesResult.results   : [];
+    const devices    = Array.isArray(devicesResult?.results)    ? devicesResult.results    : [];
+
+    const totalClicks      = devices.reduce((sum, d) => sum + (d.clicks || 0), 0);
+    const totalImpressions = devices.reduce((sum, d) => sum + (d.impressions || 0), 0);
+
+    gscSummary = {
+      period:      { start: periodStart, end: periodEnd },
+      captured_at: refSnap.captured_at,
+      totals: {
+        clicks:      totalClicks,
+        impressions: totalImpressions,
+        ctr:         totalImpressions > 0
+                       ? Math.round((totalClicks / totalImpressions) * 10000) / 10000
+                       : 0
+      },
+      top_queries: topQueries,
+      top_pages:   topPages,
+      devices
+    };
+  }
+
+  return json(
+    {
+      ok: true,
+      site,
+      freshness: freshness
+        ? {
+            pagespeed_last_updated_at:  freshness.pagespeed_last_updated_at,
+            gsc_last_updated_at:        freshness.gsc_last_updated_at,
+            overall_freshness_status:   freshness.overall_freshness_status,
+            freshness_confidence_score: freshness.freshness_confidence_score,
+            updated_at:                 freshness.updated_at
+          }
+        : null,
+      pagespeed: run
+        ? {
+            run_id:                run.id,
+            snapshot_generated_at: run.snapshot_generated_at,
+            strategies:            pagespeedStrategies
+          }
+        : null,
+      gsc: gscSummary
+    },
+    200,
+    corsHeaders
+  );
+}
+
 async function handleSiteGsc(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
