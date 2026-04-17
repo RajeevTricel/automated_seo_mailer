@@ -54,8 +54,8 @@ export default {
       if (url.pathname === '/api/site-summary') {
         return await handleSiteSummary(request, env, corsHeaders);
       }
-      if (path === '/api/ingest-ga4' && req.method === 'POST') return await handleIngestGa4(req, env);
-      if (path === '/api/ga4' && req.method === 'GET')  return await handleSiteGa4(req, env);
+      if (url.pathname === '/api/ingest-ga4' && req.method === 'POST') return await handleIngestGa4(request, env);
+      if (url.pathname === '/api/ga4' && req.method === 'GET')  return await handleSiteGa4(request, env);
 
       return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
     } catch (error) {
@@ -309,7 +309,7 @@ async function handleSiteSummary(request, env, corsHeaders) {
 }
 
 
-async function handleIngestGa4(req, env) {
+async function handleIngestGa4(request, env) {
   const secret = req.headers.get('x-ingest-secret');
   if (secret !== env.SHADOW_INGEST_SECRET) {
     return json({ error: 'unauthorized' }, 401);
