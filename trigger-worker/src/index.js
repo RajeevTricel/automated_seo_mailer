@@ -216,7 +216,7 @@ async function handleSiteSummary(request, env, corsHeaders) {
      FROM source_snapshots
      WHERE site_url = ? AND source = 'ga4' AND module = 'site_metrics'
      ORDER BY captured_at DESC LIMIT 1`
-  ).bind(siteUrl).first();
+  ).bind(site).first();
   
   let ga4Totals = null;
   let ga4TopPages = [];
@@ -232,14 +232,14 @@ async function handleSiteSummary(request, env, corsHeaders) {
          ROUND(AVG(average_session_duration), 2) as avg_session_duration
        FROM ga4_site_metrics
        WHERE site_url = ? AND period_start = ? AND period_end = ?`
-    ).bind(siteUrl, ga4Snap.period_start, ga4Snap.period_end).first();
+    ).bind(site, ga4Snap.period_start, ga4Snap.period_end).first();
   
     const ga4Pages = await env.DB.prepare(
       `SELECT landing_page, SUM(sessions) as sessions, SUM(active_users) as active_users
        FROM ga4_landing_page_metrics
        WHERE site_url = ? AND period_start = ? AND period_end = ?
        GROUP BY landing_page ORDER BY sessions DESC LIMIT 5`
-    ).bind(siteUrl, ga4Snap.period_start, ga4Snap.period_end).all();
+    ).bind(site, ga4Snap.period_start, ga4Snap.period_end).all();
   
     ga4TopPages = ga4Pages.results || [];
   }
