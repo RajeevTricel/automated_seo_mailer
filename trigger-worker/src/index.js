@@ -54,6 +54,8 @@ export default {
       if (url.pathname === '/api/site-summary') {
         return await handleSiteSummary(request, env, corsHeaders);
       }
+      if (path === '/api/ingest-ga4' && req.method === 'POST') return await handleIngestGa4(req, env);
+      if (path === '/api/ga4' && req.method === 'GET')  return await handleSiteGa4(req, env);
 
       return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
     } catch (error) {
@@ -304,6 +306,169 @@ async function handleSiteSummary(request, env, corsHeaders) {
     200,
     corsHeaders
   );
+}
+
+
+async function handleIngestGa4(req, env) {
+  const secret = req.headers.get('x-ingest-secret');
+  if (secret !== env.SHADOW_INGEST_SECRET) {
+    return json({ error: 'unauthorized' }, 401);
+  }
+
+  let body;
+  try { body = await req.json(); }
+  catch { return json({ error: 'invalid JSON' }, 400); }
+
+  const {
+    site_url, ga4_property_id, captured_at,
+    period_start, period_end,
+    site_metrics = [], landing_page_metrics = [],
+  } = body;
+
+  if (!site_url || !ga4_property_id) {
+    return json({ error: 'site_url and ga4_property_id required' }, 400);
+  }
+
+  // Register snapshot
+  const snapshotSite = await env.DB.prepare(
+    `INSERT INTO source_snapshots
+       (site_url, source, module, captured_at, period_start, period_end,
+        import_mode, parse_status, normalized_row_count)
+     VALUES (?, 'ga4', 'site_metrics', ?, ?, ?, 'api', 'success', ?)`
+  ).bind(site_url, captured_at, period_start, period_end, site_metrics.length).run();
+
+  const snapshotPage = await env.DB.prepare(
+    `INSERT INTO source_snapshots
+       (site_url, source, module, captured_at, period_start, period_end,
+        import_mode, parse_status, normalized_row_count)
+     VALUES (?, 'ga4', 'landing_page_metrics', ?, ?, ?, 'api', 'success', ?)`
+  ).bind(site_url, captured_at, period_start, period_end, landing_page_metrics.length).run();
+
+  // Insert site_metrics
+  const siteBatches = [];
+  for (const r of site_metrics) {
+    siteBatches.push(
+      env.DB.prepare(
+        `INSERT INTO ga4_site_metrics
+           (site_url, ga4_property_id, date, sessions, users, new_users,
+            pageviews, engaged_sessions, engagement_rate, bounce_rate,
+            avg_session_duration, captured_at, period_start, period_end)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      ).bind(
+        r.site_url, r.ga4_property_id, r.date,
+        r.sessions, r.users, r.new_users,
+        r.pageviews, r.engaged_sessions,
+        r.engagement_rate, r.bounce_rate, r.avg_session_duration,
+        r.captured_at, r.period_start, r.period_end
+      )
+    );
+  }
+  await executeBatches(env.DB, siteBatches);
+
+  // Insert landing_page_metrics
+  const pageBatches = [];
+  for (const r of landing_page_metrics) {
+    pageBatches.push(
+      env.DB.prepare(
+        `INSERT INTO ga4_landing_page_metrics
+           (site_url, ga4_property_id, landing_page, sessions, users,
+            pageviews, engaged_sessions, bounce_rate, captured_at, period_start, period_end)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+      ).bind(
+        r.site_url, r.ga4_property_id, r.landing_page,
+        r.sessions, r.users, r.pageviews,
+        r.engaged_sessions, r.bounce_rate,
+        r.captured_at, r.period_start, r.period_end
+      )
+    );
+  }
+  await executeBatches(env.DB, pageBatches);
+
+  // Update freshness
+  await upsertGa4FreshnessSummary(env.DB, site_url, captured_at);
+
+  return json({
+    ok: true,
+    site_url,
+    site_metrics_inserted: site_metrics.length,
+    landing_pages_inserted: landing_page_metrics.length,
+  });
+}
+
+async function upsertGa4FreshnessSummary(db, siteUrl, capturedAt) {
+  await db.prepare(
+    `INSERT INTO site_freshness_summaries (site_url, ga4_last_updated_at, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(site_url) DO UPDATE SET
+       ga4_last_updated_at = excluded.ga4_last_updated_at,
+       updated_at = datetime('now')`
+  ).bind(siteUrl, capturedAt).run();
+}
+
+async function handleSiteGa4(req, env) {
+  const url = new URL(req.url);
+  const siteUrl = url.searchParams.get('site');
+  if (!siteUrl) return json({ error: 'site param required' }, 400);
+
+  // Latest snapshot info
+  const snapshots = await env.DB.prepare(
+    `SELECT module, captured_at, period_start, period_end, normalized_row_count
+     FROM source_snapshots
+     WHERE site_url = ? AND source = 'ga4'
+     ORDER BY captured_at DESC LIMIT 10`
+  ).bind(siteUrl).all();
+
+  // Freshness
+  const freshness = await env.DB.prepare(
+    `SELECT ga4_last_updated_at FROM site_freshness_summaries WHERE site_url = ?`
+  ).bind(siteUrl).first();
+
+  // Period from most recent site_metrics snapshot
+  const latestSnap = (snapshots.results || []).find(s => s.module === 'site_metrics');
+  const periodStart = latestSnap?.period_start;
+  const periodEnd   = latestSnap?.period_end;
+
+  // Totals
+  const totals = await env.DB.prepare(
+    `SELECT
+       SUM(sessions) as total_sessions,
+       SUM(users) as total_users,
+       SUM(pageviews) as total_pageviews,
+       SUM(engaged_sessions) as total_engaged_sessions,
+       AVG(bounce_rate) as avg_bounce_rate,
+       AVG(engagement_rate) as avg_engagement_rate,
+       AVG(avg_session_duration) as avg_session_duration
+     FROM ga4_site_metrics
+     WHERE site_url = ? AND period_start = ? AND period_end = ?`
+  ).bind(siteUrl, periodStart, periodEnd).first();
+
+  // Top 20 landing pages by sessions
+  const topPages = await env.DB.prepare(
+    `SELECT landing_page, SUM(sessions) as sessions, SUM(users) as users,
+            SUM(pageviews) as pageviews, AVG(bounce_rate) as avg_bounce_rate
+     FROM ga4_landing_page_metrics
+     WHERE site_url = ? AND period_start = ? AND period_end = ?
+     GROUP BY landing_page
+     ORDER BY sessions DESC LIMIT 20`
+  ).bind(siteUrl, periodStart, periodEnd).all();
+
+  // Daily trend (last 28 rows)
+  const dailyTrend = await env.DB.prepare(
+    `SELECT date, SUM(sessions) as sessions, SUM(users) as users, SUM(pageviews) as pageviews
+     FROM ga4_site_metrics
+     WHERE site_url = ? AND period_start = ? AND period_end = ?
+     GROUP BY date ORDER BY date DESC LIMIT 28`
+  ).bind(siteUrl, periodStart, periodEnd).all();
+
+  return json({
+    site_url:    siteUrl,
+    freshness:   freshness?.ga4_last_updated_at || null,
+    period:      { start: periodStart, end: periodEnd },
+    totals,
+    top_landing_pages: topPages.results || [],
+    daily_trend:       dailyTrend.results || [],
+    snapshots:         snapshots.results || [],
+  });
 }
 
 async function handleSiteGsc(request, env, corsHeaders) {
