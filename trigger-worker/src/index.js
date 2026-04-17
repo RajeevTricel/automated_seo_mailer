@@ -445,7 +445,7 @@ async function handleSiteGa4(request, env) {
        SUM(engaged_sessions) as total_engaged_sessions,
        AVG(bounce_rate) as avg_bounce_rate,
        AVG(engagement_rate) as avg_engagement_rate,
-       AVG(avg_session_duration) as avg_session_duration
+       AVG(average_session_duration) as avg_session_duration
      FROM ga4_site_metrics
      WHERE site_url = ? AND period_start = ? AND period_end = ?`
   ).bind(siteUrl, periodStart, periodEnd).first();
@@ -464,7 +464,7 @@ async function handleSiteGa4(request, env) {
     `SELECT date, SUM(sessions) as sessions, SUM(active_users) as active_users
      FROM ga4_site_metrics
      WHERE site_url = ? AND period_start = ? AND period_end = ?
-     GROUP BY date ORDER BY date DESC LIMIT 28`
+     GROUP BY date ORDER BY date ASC`
   ).bind(siteUrl, periodStart, periodEnd).all();
 
   return json({
