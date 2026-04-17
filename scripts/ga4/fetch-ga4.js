@@ -178,6 +178,7 @@ async function fetchMappings() {
  
 // ── Process one site ──────────────────────────────────────────────────────────
 async function processSite(siteUrl, propertyId, startDate, endDate) {
+  siteUrl = siteUrl.replace(/\/$/, '');
   console.log(`\n[${siteUrl}] ga4_property_id=${propertyId}`);
  
   const rows = await fetchWindsorGA4(propertyId, startDate, endDate);
