@@ -348,40 +348,45 @@ async function handleIngestGa4(request, env) {
      VALUES (?, 'ga4', 'landing_page_metrics', ?, ?, ?, 'api', 'success', ?)`
   ).bind(site_url, captured_at, period_start, period_end, landing_page_metrics.length).run();
 
-  // Insert site_metrics
+   // Insert site_metrics
   const siteBatches = [];
   for (const r of site_metrics) {
     siteBatches.push(
       env.DB.prepare(
         `INSERT INTO ga4_site_metrics
-           (site_url, ga4_property_id, date, sessions, users, new_users,
-            pageviews, engaged_sessions, engagement_rate, bounce_rate,
-            avg_session_duration, captured_at, period_start, period_end)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+           (site_url, ga4_property_id, date, sessions, active_users,
+            engaged_sessions, engagement_rate, bounce_rate,
+            average_session_duration, captured_at, period_start, period_end)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
       ).bind(
         r.site_url, r.ga4_property_id, r.date,
-        r.sessions, r.users, r.new_users,
-        r.pageviews, r.engaged_sessions,
-        r.engagement_rate, r.bounce_rate, r.avg_session_duration,
+        r.sessions != null ? r.sessions : null,
+        r.active_users != null ? r.active_users : null,
+        r.engaged_sessions != null ? r.engaged_sessions : null,
+        r.engagement_rate != null ? r.engagement_rate : null,
+        r.bounce_rate != null ? r.bounce_rate : null,
+        r.average_session_duration != null ? r.average_session_duration : null,
         r.captured_at, r.period_start, r.period_end
       )
     );
   }
   await executeBatches(env.DB, siteBatches);
-
+  
   // Insert landing_page_metrics
   const pageBatches = [];
   for (const r of landing_page_metrics) {
     pageBatches.push(
       env.DB.prepare(
         `INSERT INTO ga4_landing_page_metrics
-           (site_url, ga4_property_id, landing_page, sessions, users,
-            pageviews, engaged_sessions, bounce_rate, captured_at, period_start, period_end)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+           (site_url, ga4_property_id, landing_page, sessions, active_users,
+            engaged_sessions, bounce_rate, captured_at, period_start, period_end)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`
       ).bind(
         r.site_url, r.ga4_property_id, r.landing_page,
-        r.sessions, r.users, r.pageviews,
-        r.engaged_sessions, r.bounce_rate,
+        r.sessions != null ? r.sessions : null,
+        r.active_users != null ? r.active_users : null,
+        r.engaged_sessions != null ? r.engaged_sessions : null,
+        r.bounce_rate != null ? r.bounce_rate : null,
         r.captured_at, r.period_start, r.period_end
       )
     );
