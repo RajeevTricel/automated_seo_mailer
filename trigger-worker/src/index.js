@@ -310,9 +310,13 @@ async function handleSiteSummary(request, env, corsHeaders) {
 
 
 async function handleIngestGa4(request, env) {
-  const secret = request.headers.get('x-ingest-secret');
-  if (secret !== env.SHADOW_INGEST_SECRET) {
-    return json({ error: 'unauthorized' }, 401);
+  if (!env.INGEST_SHARED_SECRET) {
+    return json({ ok: false, message: 'Missing INGEST_SHARED_SECRET secret' }, 500, corsHeaders);
+  }
+
+  const providedSecret = request.headers.get('x-ingest-secret') || '';
+  if (!providedSecret || providedSecret !== env.INGEST_SHARED_SECRET) {
+    return json({ ok: false, message: 'Invalid ingest secret' }, 401, corsHeaders);
   }
 
   let body;
