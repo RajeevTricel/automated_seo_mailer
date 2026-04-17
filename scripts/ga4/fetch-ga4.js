@@ -62,12 +62,17 @@ async function postJson(url, payload, secret) {
 // ── Windsor fetch ─────────────────────────────────────────────────────────────
 async function fetchWindsorGA4(propertyId, startDate, endDate) {
   const fields = [
-    'date',
-    'sessions', 'users', 'new_users',
-    'pageviews', 'engaged_sessions', 'engagement_rate',
-    'bounce_rate', 'avg_session_duration',
-    'source', 'medium', 'landing_page',
-    'device_category', 'country',
+  'date',
+  'sessions',
+  'active_users',
+  'engaged_sessions',
+  'engagement_rate',
+  'bounce_rate',
+  'average_session_duration',
+  'devicecategory',
+  'source',
+  'medium',
+  'landing_page',
   ].join(',');
  
   const url = new URL('https://connectors.windsor.ai/googleanalytics4');
@@ -97,21 +102,20 @@ function normalizeRows(rows, siteUrl, propertyId, startDate, endDate) {
     if (!dailyMap[key]) {
       dailyMap[key] = {
         date: key,
-        sessions: 0, users: 0, new_users: 0,
-        pageviews: 0, engaged_sessions: 0,
+        sessions: 0, users: 0,
+        engaged_sessions: 0,
         engagement_rate_sum: 0, bounce_rate_sum: 0,
         avg_session_duration_sum: 0, row_count: 0,
       };
     }
     const d = dailyMap[key];
     d.sessions             += Number(r.sessions)             || 0;
-    d.users                += Number(r.users)                || 0;
-    d.new_users            += Number(r.new_users)            || 0;
-    d.pageviews            += Number(r.pageviews)            || 0;
+    d.users                += Number(r.active_users)                || 0;
     d.engaged_sessions     += Number(r.engaged_sessions)     || 0;
     d.engagement_rate_sum  += Number(r.engagement_rate)      || 0;
     d.bounce_rate_sum      += Number(r.bounce_rate)          || 0;
-    d.avg_session_duration_sum += Number(r.avg_session_duration) || 0;
+    d.device_category      += Number(r.devicecategory)       || 0;
+    d.avg_session_duration_sum += Number(r.average_session_duration) || 0;
     d.row_count++;
   }
  
@@ -121,8 +125,6 @@ function normalizeRows(rows, siteUrl, propertyId, startDate, endDate) {
     date:                 d.date,
     sessions:             d.sessions,
     users:                d.users,
-    new_users:            d.new_users,
-    pageviews:            d.pageviews,
     engaged_sessions:     d.engaged_sessions,
     engagement_rate:      d.row_count ? d.engagement_rate_sum / d.row_count : null,
     bounce_rate:          d.row_count ? d.bounce_rate_sum     / d.row_count : null,
@@ -139,14 +141,13 @@ function normalizeRows(rows, siteUrl, propertyId, startDate, endDate) {
     if (!pageMap[key]) {
       pageMap[key] = {
         landing_page: key,
-        sessions: 0, users: 0, pageviews: 0,
+        sessions: 0, users: 0,
         engaged_sessions: 0, bounce_rate_sum: 0, row_count: 0,
       };
     }
     const p = pageMap[key];
     p.sessions         += Number(r.sessions)         || 0;
-    p.users            += Number(r.users)            || 0;
-    p.pageviews        += Number(r.pageviews)        || 0;
+    p.users            += Number(r.active_users)            || 0;
     p.engaged_sessions += Number(r.engaged_sessions) || 0;
     p.bounce_rate_sum  += Number(r.bounce_rate)      || 0;
     p.row_count++;
@@ -158,7 +159,6 @@ function normalizeRows(rows, siteUrl, propertyId, startDate, endDate) {
     landing_page:     p.landing_page,
     sessions:         p.sessions,
     users:            p.users,
-    pageviews:        p.pageviews,
     engaged_sessions: p.engaged_sessions,
     bounce_rate:      p.row_count ? p.bounce_rate_sum / p.row_count : null,
     captured_at:      capturedAt,
