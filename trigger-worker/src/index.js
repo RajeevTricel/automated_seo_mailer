@@ -54,8 +54,8 @@ export default {
       if (url.pathname === '/api/site-summary') {
         return await handleSiteSummary(request, env, corsHeaders);
       }
-      if (url.pathname === '/api/ingest-ga4' && req.method === 'POST') return await handleIngestGa4(request, env);
-      if (url.pathname === '/api/ga4' && req.method === 'GET')  return await handleSiteGa4(request, env);
+      if (url.pathname === '/api/ingest-ga4' && request.method === 'POST') return await handleIngestGa4(request, env, corsHeaders);
+      if (url.pathname === '/api/ga4' && request.method === 'GET') return await handleSiteGa4(request, env, corsHeaders);
 
       return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
     } catch (error) {
