@@ -634,7 +634,7 @@ async function handleSiteSourceMappings(request, env, corsHeaders) {
   }
 
   const expectedSecret =
-    asNullableString(env.GSC_INGEST_SHARED_SECRET) ||
+    asNullableString(env.SHADOW_INGEST_SECRET) ||
     asNullableString(env.INGEST_SHARED_SECRET);
 
   if (!expectedSecret) {
