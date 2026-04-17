@@ -211,7 +211,38 @@ async function handleSiteSummary(request, env, corsHeaders) {
       captured_at: row.created_at
     };
   }
-
+  const ga4Snap = await env.DB.prepare(
+    `SELECT module, captured_at, period_start, period_end
+     FROM source_snapshots
+     WHERE site_url = ? AND source = 'ga4' AND module = 'site_metrics'
+     ORDER BY captured_at DESC LIMIT 1`
+  ).bind(siteUrl).first();
+  
+  let ga4Totals = null;
+  let ga4TopPages = [];
+  
+  if (ga4Snap) {
+    ga4Totals = await env.DB.prepare(
+      `SELECT
+         SUM(sessions) as total_sessions,
+         SUM(active_users) as total_active_users,
+         SUM(engaged_sessions) as total_engaged_sessions,
+         ROUND(AVG(bounce_rate), 4) as avg_bounce_rate,
+         ROUND(AVG(engagement_rate), 4) as avg_engagement_rate,
+         ROUND(AVG(average_session_duration), 2) as avg_session_duration
+       FROM ga4_site_metrics
+       WHERE site_url = ? AND period_start = ? AND period_end = ?`
+    ).bind(siteUrl, ga4Snap.period_start, ga4Snap.period_end).first();
+  
+    const ga4Pages = await env.DB.prepare(
+      `SELECT landing_page, SUM(sessions) as sessions, SUM(active_users) as active_users
+       FROM ga4_landing_page_metrics
+       WHERE site_url = ? AND period_start = ? AND period_end = ?
+       GROUP BY landing_page ORDER BY sessions DESC LIMIT 5`
+    ).bind(siteUrl, ga4Snap.period_start, ga4Snap.period_end).all();
+  
+    ga4TopPages = ga4Pages.results || [];
+  }
   // Step 3: if GSC snapshots exist, fetch summarised metric rows
   let gscSummary = null;
   const refSnap = querySnap || pageSnap || deviceSnap;
