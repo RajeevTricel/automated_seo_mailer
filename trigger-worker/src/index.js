@@ -189,6 +189,11 @@ async function handleSiteSummary(request, env, corsHeaders) {
         `SELECT pagespeed_last_updated_at, gsc_last_updated_at, overall_freshness_status, freshness_confidence_score, updated_at
          FROM site_freshness_summaries
          WHERE site_url = ? LIMIT 1`
+      ).bind(site),
+      env.DB.prepare(
+        `SELECT pagespeed_last_updated_at, gsc_last_updated_at, ga4_last_updated_at, overall_freshness_status, freshness_confidence_score, updated_at
+         FROM site_freshness_summaries
+         WHERE site_url = ? LIMIT 1`
       ).bind(site)
     ]);
 
