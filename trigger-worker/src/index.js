@@ -441,7 +441,7 @@ async function handleSiteGa4(request, env) {
   const totals = await env.DB.prepare(
     `SELECT
        SUM(sessions) as total_sessions,
-       SUM(users) as total_users,
+       SUM(active_users) as total_active_users,
        SUM(pageviews) as total_pageviews,
        SUM(engaged_sessions) as total_engaged_sessions,
        AVG(bounce_rate) as avg_bounce_rate,
@@ -453,7 +453,7 @@ async function handleSiteGa4(request, env) {
 
   // Top 20 landing pages by sessions
   const topPages = await env.DB.prepare(
-    `SELECT landing_page, SUM(sessions) as sessions, SUM(users) as users,
+    `SELECT landing_page, SUM(sessions) as sessions, SUM(active_users) as active_users,
             SUM(pageviews) as pageviews, AVG(bounce_rate) as avg_bounce_rate
      FROM ga4_landing_page_metrics
      WHERE site_url = ? AND period_start = ? AND period_end = ?
@@ -463,7 +463,7 @@ async function handleSiteGa4(request, env) {
 
   // Daily trend (last 28 rows)
   const dailyTrend = await env.DB.prepare(
-    `SELECT date, SUM(sessions) as sessions, SUM(users) as users, SUM(pageviews) as pageviews
+    `SELECT date, SUM(sessions) as sessions, SUM(active_users) as active_users, SUM(pageviews) as pageviews
      FROM ga4_site_metrics
      WHERE site_url = ? AND period_start = ? AND period_end = ?
      GROUP BY date ORDER BY date DESC LIMIT 28`
