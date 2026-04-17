@@ -330,7 +330,7 @@ async function handleIngestGa4(request, env, corsHeaders) {
   } = body;
 
   if (!site_url || !ga4_property_id) {
-    return json({ error: 'site_url and ga4_property_id required' }, 400, , corsHeaders);
+    return json({ error: 'site_url and ga4_property_id required' }, 400, corsHeaders);
   }
 
   // Register snapshot
