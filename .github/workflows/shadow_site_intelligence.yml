@@ -56,6 +56,27 @@ on:
         options:
           - "true"
           - "false"
+      run_ga4:
+        description: "Run GA4 ingestion for one site"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      run_ga4_all:
+        description: "Run GA4 ingestion for all mapped active sites"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      ga4_property_id:
+        description: "GA4 property ID for single-site run"
+        required: false
+        default: ""
+        type: string
   schedule:
     - cron: "37 8 * * *"
 
@@ -358,3 +379,178 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  ingest-ga4-single-site:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_ga4 == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate GA4 inputs
+        run: |
+          test -n "${{ github.event.inputs.site_url }}" || (echo "Missing site_url" && exit 1)
+          test -n "${{ github.event.inputs.ga4_property_id }}" || (echo "Missing ga4_property_id" && exit 1)
+
+      - name: Run GA4 fetch and ingest
+        run: node scripts/ga4/fetch-ga4.js
+        env:
+          WINDSOR_API_KEY:       ${{ secrets.WINDSOR_API_KEY }}
+          SHADOW_INGEST_SECRET:  ${{ secrets.SHADOW_INGEST_SECRET }}
+          SHADOW_GA4_INGEST_URL: ${{ vars.SHADOW_GA4_INGEST_URL }}
+          INPUT_SITE_URL:        ${{ github.event.inputs.site_url }}
+          INPUT_GA4_PROPERTY_ID: ${{ github.event.inputs.ga4_property_id }}
+          INPUT_START_DATE:      ${{ github.event.inputs.start_date }}
+          INPUT_END_DATE:        ${{ github.event.inputs.end_date }}
+          INPUT_DRY_RUN:         ${{ github.event.inputs.dry_run }}
+
+      - name: Upload GA4 debug artifact
+        if: always()
+        run: |
+          cat <<'EOF' > ga4-run-summary.json
+          {
+            "mode": "single-site",
+            "site_url": "${{ github.event.inputs.site_url }}",
+            "ga4_property_id": "${{ github.event.inputs.ga4_property_id }}",
+            "start_date": "${{ github.event.inputs.start_date }}",
+            "end_date": "${{ github.event.inputs.end_date }}",
+            "dry_run": "${{ github.event.inputs.dry_run }}",
+            "workflow_run_id": "${{ github.run_id }}"
+          }
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shadow-ga4-single-site-${{ github.run_id }}
+          path: ga4-run-summary.json
+          if-no-files-found: error
+          retention-days: 7
+
+  ingest-ga4-all-sites:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_ga4_all == 'true')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Resolve GA4 date window
+        env:
+          INPUT_START_DATE: ${{ github.event.inputs.start_date }}
+          INPUT_END_DATE:   ${{ github.event.inputs.end_date }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_END_DATE}" ]; then
+            END_DATE="${INPUT_END_DATE}"
+          else
+            END_DATE="$(date -u -d 'yesterday' +%F)"
+          fi
+          if [ -n "${INPUT_START_DATE}" ]; then
+            START_DATE="${INPUT_START_DATE}"
+          else
+            START_DATE="$(date -u -d "${END_DATE} -27 days" +%F)"
+          fi
+          echo "START_DATE=${START_DATE}" >> "$GITHUB_ENV"
+          echo "END_DATE=${END_DATE}"     >> "$GITHUB_ENV"
+          echo "Resolved ${START_DATE} → ${END_DATE}"
+
+      - name: Fetch mapped active GA4 sites
+        env:
+          SHADOW_GA4_INGEST_URL: ${{ vars.SHADOW_GA4_INGEST_URL }}
+          SHADOW_INGEST_SECRET:  ${{ secrets.SHADOW_INGEST_SECRET }}
+        run: |
+          set -euo pipefail
+          MAPPINGS_URL="${SHADOW_GA4_INGEST_URL%/api/ingest-ga4}/api/site-source-mappings?source=ga4"
+          curl --fail-with-body --silent --show-error \
+            -H "x-ingest-secret: ${SHADOW_INGEST_SECRET}" \
+            "${MAPPINGS_URL}" > ga4-sites.json
+          jq '.' ga4-sites.json
+          jq -e '.ok == true' ga4-sites.json > /dev/null
+          SITE_COUNT="$(jq '.count' ga4-sites.json)"
+          echo "Mapped active GA4 sites: ${SITE_COUNT}"
+          test "${SITE_COUNT}" -gt 0
+
+      - name: Run GA4 fetch and ingest for all mapped sites
+        env:
+          WINDSOR_API_KEY:       ${{ secrets.WINDSOR_API_KEY }}
+          SHADOW_INGEST_SECRET:  ${{ secrets.SHADOW_INGEST_SECRET }}
+          SHADOW_GA4_INGEST_URL: ${{ vars.SHADOW_GA4_INGEST_URL }}
+          START_DATE:            ${{ env.START_DATE }}
+          END_DATE:              ${{ env.END_DATE }}
+        run: |
+          set -euo pipefail
+          : > ga4-failures.txt
+          : > ga4-successes.txt
+          FAILURES=0
+          SUCCESSES=0
+
+          while IFS= read -r row; do
+            SITE_URL="$(echo "${row}" | jq -r '.site_url')"
+            GA4_ID="$(echo "${row}" | jq -r '.ga4_property_id')"
+            DISPLAY="$(echo "${row}" | jq -r '.display_name // .site_url')"
+
+            [ -z "${SITE_URL}" ] || [ "${SITE_URL}" = "null" ] && continue
+            [ -z "${GA4_ID}"   ] || [ "${GA4_ID}"   = "null" ] && continue
+
+            echo "::group::GA4 ingest - ${DISPLAY} (${SITE_URL})"
+            set +e
+            INPUT_SITE_URL="${SITE_URL}" \
+            INPUT_GA4_PROPERTY_ID="${GA4_ID}" \
+            INPUT_DRY_RUN="false" \
+            node scripts/ga4/fetch-ga4.js
+            EXIT_CODE=$?
+            set -e
+
+            if [ "${EXIT_CODE}" -ne 0 ]; then
+              FAILURES=$((FAILURES + 1))
+              printf '%s\t%s\n' "${SITE_URL}" "${GA4_ID}" >> ga4-failures.txt
+            else
+              SUCCESSES=$((SUCCESSES + 1))
+              printf '%s\t%s\n' "${SITE_URL}" "${GA4_ID}" >> ga4-successes.txt
+            fi
+            echo "::endgroup::"
+          done < <(jq -c '.sites[]' ga4-sites.json)
+
+          jq -n \
+            --arg start "${START_DATE}" --arg end "${END_DATE}" \
+            --argjson s "${SUCCESSES}" --argjson f "${FAILURES}" \
+            '{mode:"all-sites",start_date:$start,end_date:$end,success_count:$s,failure_count:$f}' \
+            > ga4-all-run-summary.json
+          cat ga4-all-run-summary.json
+
+          if [ "${FAILURES}" -gt 0 ]; then
+            echo "Some GA4 ingests failed:"
+            cat ga4-failures.txt
+            exit 1
+          fi
+
+      - name: Upload GA4 all-sites artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-ga4-all-sites-${{ github.run_id }}
+          path: |
+            ga4-sites.json
+            ga4-all-run-summary.json
+            ga4-successes.txt
+            ga4-failures.txt
+          if-no-files-found: warn
+          retention-days: 7
