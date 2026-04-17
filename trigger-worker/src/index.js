@@ -309,7 +309,7 @@ async function handleSiteSummary(request, env, corsHeaders) {
 }
 
 
-async function handleIngestGa4(request, env) {
+async function handleIngestGa4(request, env, corsHeaders) {
   if (!env.INGEST_SHARED_SECRET) {
     return json({ ok: false, message: 'Missing INGEST_SHARED_SECRET secret' }, 500, corsHeaders);
   }
@@ -321,7 +321,7 @@ async function handleIngestGa4(request, env) {
 
   let body;
   try { body = await request.json(); }
-  catch { return json({ error: 'invalid JSON' }, 400); }
+  catch { return json({ error: 'invalid JSON' }, 400, corsHeaders); }
 
   const {
     site_url, ga4_property_id, captured_at,
@@ -330,7 +330,7 @@ async function handleIngestGa4(request, env) {
   } = body;
 
   if (!site_url || !ga4_property_id) {
-    return json({ error: 'site_url and ga4_property_id uired' }, 400);
+    return json({ error: 'site_url and ga4_property_id required' }, 400, , corsHeaders);
   }
 
   // Register snapshot
@@ -370,7 +370,7 @@ async function handleIngestGa4(request, env) {
       )
     );
   }
-  await executeBatches(env.DB, siteBatches);
+  await executeBatches(env.DB, siteBatches, 50);
   
   // Insert landing_page_metrics
   const pageBatches = [];
@@ -391,7 +391,7 @@ async function handleIngestGa4(request, env) {
       )
     );
   }
-  await executeBatches(env.DB, pageBatches);
+  await executeBatches(env.DB, pageBatches, 50);
 
   // Update freshness
   await upsertGa4FreshnessSummary(env.DB, site_url, captured_at);
@@ -417,7 +417,7 @@ async function upsertGa4FreshnessSummary(db, siteUrl, capturedAt) {
 async function handleSiteGa4(request, env) {
   const url = new URL(request.url);
   const siteUrl = url.searchParams.get('site');
-  if (!siteUrl) return json({ error: 'site param required' }, 400);
+  if (!siteUrl) return json({ error: 'site param required' }, 400, corsHeaders);
 
   // Latest snapshot info
   const snapshots = await env.DB.prepare(
