@@ -332,7 +332,7 @@ async function handleSiteSummary(request, env, corsHeaders) {
             strategies:            pagespeedStrategies
           }
         : null,
-      gsc: gscSummary
+      gsc: gscSummary,
       ga4: ga4Totals ? {
         period: { start: ga4Snap.period_start, end: ga4Snap.period_end },
         totals: ga4Totals,
