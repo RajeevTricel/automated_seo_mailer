@@ -310,13 +310,13 @@ async function handleSiteSummary(request, env, corsHeaders) {
 
 
 async function handleIngestGa4(request, env) {
-  const secret = req.headers.get('x-ingest-secret');
+  const secret = request.headers.get('x-ingest-secret');
   if (secret !== env.SHADOW_INGEST_SECRET) {
     return json({ error: 'unauthorized' }, 401);
   }
 
   let body;
-  try { body = await req.json(); }
+  try { body = await request.json(); }
   catch { return json({ error: 'invalid JSON' }, 400); }
 
   const {
@@ -326,7 +326,7 @@ async function handleIngestGa4(request, env) {
   } = body;
 
   if (!site_url || !ga4_property_id) {
-    return json({ error: 'site_url and ga4_property_id required' }, 400);
+    return json({ error: 'site_url and ga4_property_id uired' }, 400);
   }
 
   // Register snapshot
@@ -405,8 +405,8 @@ async function upsertGa4FreshnessSummary(db, siteUrl, capturedAt) {
   ).bind(siteUrl, capturedAt).run();
 }
 
-async function handleSiteGa4(req, env) {
-  const url = new URL(req.url);
+async function handleSiteGa4(request, env) {
+  const url = new URL(request.url);
   const siteUrl = url.searchParams.get('site');
   if (!siteUrl) return json({ error: 'site param required' }, 400);
 
