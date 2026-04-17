@@ -333,6 +333,11 @@ async function handleSiteSummary(request, env, corsHeaders) {
           }
         : null,
       gsc: gscSummary
+      ga4: ga4Totals ? {
+        period: { start: ga4Snap.period_start, end: ga4Snap.period_end },
+        totals: ga4Totals,
+        top_pages: ga4TopPages,
+      } : null,
     },
     200,
     corsHeaders
