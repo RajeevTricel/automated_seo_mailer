@@ -82,7 +82,7 @@ export default {
 async function handleIngestSummaries(request, env, corsHeaders) {
   try {
     const secret = request.headers.get('x-ingest-secret');
-    if (secret !== env.SHADOW_INGEST_SECRET) {
+    if (secret !== env.INGEST_SHARED_SECRET) {
       return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
     }
  
