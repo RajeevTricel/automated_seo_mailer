@@ -515,7 +515,10 @@ async function main() {
   if (TARGET_SITE) {
     sites = [TARGET_SITE.replace(/\/$/, '')];
   } else {
-    const res = await fetchJSON(`${WORKER_BASE}/api/site-source-mappings?source=ga4`);
+    const mappingsRes = await fetch(`${WORKER_BASE}/api/site-source-mappings?source=ga4`, {
+      headers: { 'x-ingest-secret': INGEST_SECRET }
+    });
+    const res = await mappingsRes.json();
     if (!res.ok) throw new Error(`Failed to fetch mappings: ${res.error}`);
     sites = (res.sites || []).map(s => s.site_url.replace(/\/$/, ''));
     console.log(`Resolved ${sites.length} sites from GA4 mappings`);
