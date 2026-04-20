@@ -186,15 +186,10 @@ async function handleSiteSummary(request, env, corsHeaders) {
          ORDER BY captured_at DESC LIMIT 1`
       ).bind(site),
       env.DB.prepare(
-        `SELECT pagespeed_last_updated_at, gsc_last_updated_at, overall_freshness_status, freshness_confidence_score, updated_at
-         FROM site_freshness_summaries
-         WHERE site_url = ? LIMIT 1`
-      ).bind(site),
-      env.DB.prepare(
         `SELECT pagespeed_last_updated_at, gsc_last_updated_at, ga4_last_updated_at, overall_freshness_status, freshness_confidence_score, updated_at
          FROM site_freshness_summaries
          WHERE site_url = ? LIMIT 1`
-      ).bind(site)
+      ).bind(site),
     ]);
 
   const psRows     = Array.isArray(psResult?.results)      ? psResult.results      : [];
@@ -325,6 +320,7 @@ async function handleSiteSummary(request, env, corsHeaders) {
         ? {
             pagespeed_last_updated_at:  freshness.pagespeed_last_updated_at,
             gsc_last_updated_at:        freshness.gsc_last_updated_at,
+            ga4_last_updated_at:        freshness.ga4_last_updated_at, 
             overall_freshness_status:   freshness.overall_freshness_status,
             freshness_confidence_score: freshness.freshness_confidence_score,
             updated_at:                 freshness.updated_at
