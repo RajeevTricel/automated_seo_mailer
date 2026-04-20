@@ -77,8 +77,27 @@ on:
         required: false
         default: ""
         type: string
+      run_summaries:
+        description: 'Compute and ingest summaries for a single site'
+        type: boolean
+        default: false
+      run_summaries_all:
+        description: 'Compute and ingest summaries for all sites'
+        type: boolean
+        default: false
+      summaries_site_url:
+        description: 'Site URL for single-site summary run (used with run_summaries)'
+        type: string
+        required: false
+        default: ''
+      dry_run_summaries:
+        description: 'Dry run — compute but do not write to D1'
+        type: boolean
+        default: false
   schedule:
     - cron: "37 8 * * *"
+    - cron: '30 3 * * *'  
+    - cron: '0 4 * * *'    
 
 permissions:
   contents: read
@@ -554,3 +573,46 @@ jobs:
             ga4-failures.txt
           if-no-files-found: warn
           retention-days: 7
+
+  ingest-summaries-single-site:
+    name: Compute summaries — single site
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.run_summaries == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+ 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+ 
+      - name: Compute and ingest summaries
+        env:
+          SHADOW_WORKER_BASE:   ${{ vars.SHADOW_WORKER_BASE }}
+          SHADOW_INGEST_SECRET: ${{ secrets.SHADOW_INGEST_SECRET }}
+          SITE_URL:             ${{ github.event.inputs.summaries_site_url }}
+          DRY_RUN:              ${{ github.event.inputs.dry_run_summaries }}
+        run: node scripts/summaries/compute-summaries.js
+  
+  ingest-summaries-all-sites:
+    name: Compute summaries — all sites
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'schedule' ||
+      github.event.inputs.run_summaries_all == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+ 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+ 
+      - name: Compute and ingest summaries for all sites
+        env:
+          SHADOW_WORKER_BASE:   ${{ vars.SHADOW_WORKER_BASE }}
+          SHADOW_INGEST_SECRET: ${{ secrets.SHADOW_INGEST_SECRET }}
+          DRY_RUN:              'false'
+        run: node scripts/summaries/compute-summaries.js
