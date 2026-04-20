@@ -235,7 +235,7 @@ async function handleSiteSummary(request, env, corsHeaders) {
     ).bind(site, ga4Snap.period_start, ga4Snap.period_end).first();
   
     const ga4Pages = await env.DB.prepare(
-      `SELECT landing_page, SUM(sessions) as sessions, SUM(active_users) as active_users
+      `SELECT landing_page, SUM(sessions) as sessions, SUM(active_users) as total_active_users
        FROM ga4_landing_page_metrics
        WHERE site_url = ? AND period_start = ? AND period_end = ?
        GROUP BY landing_page ORDER BY sessions DESC LIMIT 5`
