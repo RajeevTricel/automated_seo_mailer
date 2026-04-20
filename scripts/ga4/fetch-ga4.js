@@ -69,7 +69,6 @@ async function fetchWindsorGA4(propertyId, startDate, endDate) {
   'engagement_rate',
   'bounce_rate',
   'average_session_duration',
-  'devicecategory',
   'source',
   'medium',
   'landing_page',
@@ -89,8 +88,6 @@ async function fetchWindsorGA4(propertyId, startDate, endDate) {
     throw new Error(`Windsor returned ${res.status}: ${JSON.stringify(res.data).slice(0, 300)}`);
   }
   return res.data.data || [];
-  console.log('Sample row:', JSON.stringify(rows[0])); 
-  return rows;
 }
  
 // ── Normalize ─────────────────────────────────────────────────────────────────
@@ -116,7 +113,6 @@ function normalizeRows(rows, siteUrl, propertyId, startDate, endDate) {
     d.engaged_sessions     += Number(r.engaged_sessions)     || 0;
     d.engagement_rate_sum  += Number(r.engagement_rate)      || 0;
     d.bounce_rate_sum      += Number(r.bounce_rate)          || 0;
-    d.device_category      += Number(r.devicecategory)       || 0;
     d.avg_session_duration_sum += Number(r.average_session_duration) || 0;
     d.row_count++;
   }
@@ -126,11 +122,11 @@ function normalizeRows(rows, siteUrl, propertyId, startDate, endDate) {
     ga4_property_id:      propertyId,
     date:                 d.date,
     sessions:             d.sessions,
-    users:                d.users,
+    active_users:         d.users,
     engaged_sessions:     d.engaged_sessions,
     engagement_rate:      d.row_count ? d.engagement_rate_sum / d.row_count : null,
     bounce_rate:          d.row_count ? d.bounce_rate_sum     / d.row_count : null,
-    avg_session_duration: d.row_count ? d.avg_session_duration_sum / d.row_count : null,
+    average_session_duration: d.row_count ? d.avg_session_duration_sum / d.row_count : null,
     captured_at:          capturedAt,
     period_start:         startDate,
     period_end:           endDate,
@@ -160,7 +156,7 @@ function normalizeRows(rows, siteUrl, propertyId, startDate, endDate) {
     ga4_property_id:  propertyId,
     landing_page:     p.landing_page,
     sessions:         p.sessions,
-    users:            p.users,
+    active_users:            p.users,
     engaged_sessions: p.engaged_sessions,
     bounce_rate:      p.row_count ? p.bounce_rate_sum / p.row_count : null,
     captured_at:      capturedAt,
@@ -175,7 +171,7 @@ function normalizeRows(rows, siteUrl, propertyId, startDate, endDate) {
 async function fetchMappings() {
   const res = await fetchJson(MAPPINGS_URL, { method: 'GET' });
   if (res.status !== 200) throw new Error(`Mappings fetch failed: ${res.status}`);
-  return res.data.mappings || [];
+  return res.data.sites || [];
 }
  
 // ── Process one site ──────────────────────────────────────────────────────────
