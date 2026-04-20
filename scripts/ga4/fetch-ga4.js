@@ -89,6 +89,8 @@ async function fetchWindsorGA4(propertyId, startDate, endDate) {
     throw new Error(`Windsor returned ${res.status}: ${JSON.stringify(res.data).slice(0, 300)}`);
   }
   return res.data.data || [];
+  console.log('Sample row:', JSON.stringify(rows[0])); 
+  return rows;
 }
  
 // ── Normalize ─────────────────────────────────────────────────────────────────
