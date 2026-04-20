@@ -106,12 +106,12 @@ async function handleIngestSummaries(request, env, corsHeaders) {
     `).bind(
       site_url,
       as_of_date,
-      health?.technical_health_score          ?? null,
-      health?.search_performance_health_score ?? null,
-      health?.traffic_health_score            ?? null,
-      health?.indexing_health_score           ?? null,
-      health?.trend_signal_score              ?? null,
-      health?.overall_health_score            ?? null,
+      health?.technical_health_score          ?? 0,
+      health?.search_performance_health_score ?? 0,
+      health?.traffic_health_score            ?? 0,
+      health?.indexing_health_score           ?? 0,
+      health?.trend_signal_score              ?? 0,
+      health?.overall_health_score            ?? 0,
       health?.summary_text                    ?? null,
       health?.supporting_metrics_json         ?? null,
       as_of_date
