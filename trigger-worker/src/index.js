@@ -56,6 +56,12 @@ export default {
       }
       if (url.pathname === '/api/ingest-ga4' && request.method === 'POST') return await handleIngestGa4(request, env, corsHeaders);
       if (url.pathname === '/api/ga4' && request.method === 'GET') return await handleSiteGa4(request, env, corsHeaders);
+      if (url.pathname === '/api/ingest-summaries' && request.method === 'POST') {
+        return await handleIngestSummaries(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/site-health' && request.method === 'GET') {
+        return await handleSiteHealth(request, env, corsHeaders);
+      }
 
       return json({ ok: false, message: 'Not found' }, 404, corsHeaders);
     } catch (error) {
@@ -72,6 +78,147 @@ export default {
     }
   }
 };
+
+async function handleIngestSummaries(request, env, corsHeaders) {
+  try {
+    const secret = request.headers.get('x-ingest-secret');
+    if (secret !== env.SHADOW_INGEST_SECRET) {
+      return json({ ok: false, error: 'Unauthorized' }, 401, corsHeaders);
+    }
+ 
+    const body = await request.json();
+    const { site_url, computed_at, health, risks, opportunities, priority_actions, changes } = body;
+ 
+    if (!site_url || !computed_at) {
+      return json({ ok: false, error: 'Missing site_url or computed_at' }, 400, corsHeaders);
+    }
+ 
+    const db = env.DB;
+ 
+    // 1. Upsert site_health_summaries (one row per site, always replace)
+    await db.prepare(`
+      INSERT INTO site_health_summaries
+        (site_url, technical_health_score, search_performance_score, traffic_health_score,
+         overall_health_score, computed_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(site_url) DO UPDATE SET
+        technical_health_score    = excluded.technical_health_score,
+        search_performance_score  = excluded.search_performance_score,
+        traffic_health_score      = excluded.traffic_health_score,
+        overall_health_score      = excluded.overall_health_score,
+        computed_at               = excluded.computed_at,
+        updated_at                = excluded.updated_at
+    `).bind(
+      site_url,
+      health?.technical_health_score ?? null,
+      health?.search_performance_score ?? null,
+      health?.traffic_health_score ?? null,
+      health?.overall_health_score ?? null,
+      computed_at,
+      computed_at
+    ).run();
+ 
+    // 2. Replace risk flags — clear old, insert fresh
+    await db.prepare(`DELETE FROM site_risk_flags WHERE site_url = ?`).bind(site_url).run();
+    if (risks?.length) {
+      const stmts = risks.map(r =>
+        db.prepare(`
+          INSERT INTO site_risk_flags
+            (site_url, risk_type, severity, source, description, metric_value, threshold, computed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          site_url,
+          r.risk_type,
+          r.severity,
+          r.source,
+          r.description,
+          r.metric_value ?? null,
+          r.threshold ?? null,
+          computed_at
+        )
+      );
+      await db.batch(stmts);
+    }
+ 
+    // 3. Replace opportunity flags
+    await db.prepare(`DELETE FROM site_opportunity_flags WHERE site_url = ?`).bind(site_url).run();
+    if (opportunities?.length) {
+      const stmts = opportunities.map(o =>
+        db.prepare(`
+          INSERT INTO site_opportunity_flags
+            (site_url, opportunity_type, source, description, metric_value, potential_impact, computed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          site_url,
+          o.opportunity_type,
+          o.source,
+          o.description,
+          o.metric_value ?? null,
+          o.potential_impact,
+          computed_at
+        )
+      );
+      await db.batch(stmts);
+    }
+ 
+    // 4. Replace priority actions
+    await db.prepare(`DELETE FROM site_priority_actions WHERE site_url = ?`).bind(site_url).run();
+    if (priority_actions?.length) {
+      const stmts = priority_actions.map(a =>
+        db.prepare(`
+          INSERT INTO site_priority_actions
+            (site_url, priority, action_type, description, source, severity, computed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          site_url,
+          a.priority,
+          a.action_type,
+          a.description,
+          a.source,
+          a.severity,
+          computed_at
+        )
+      );
+      await db.batch(stmts);
+    }
+ 
+    // 5. Replace detected changes
+    await db.prepare(`DELETE FROM site_detected_changes WHERE site_url = ?`).bind(site_url).run();
+    if (changes?.length) {
+      const stmts = changes.map(c =>
+        db.prepare(`
+          INSERT INTO site_detected_changes
+            (site_url, metric, source, previous_value, current_value, delta_pct, direction, is_material, computed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          site_url,
+          c.metric,
+          c.source,
+          c.previous_value ?? null,
+          c.current_value ?? null,
+          c.delta_pct ?? null,
+          c.direction,
+          c.is_material ? 1 : 0,
+          computed_at
+        )
+      );
+      await db.batch(stmts);
+    }
+ 
+    return json({
+      ok: true,
+      site_url,
+      risks_written:         risks?.length ?? 0,
+      opportunities_written: opportunities?.length ?? 0,
+      actions_written:       priority_actions?.length ?? 0,
+      changes_written:       changes?.length ?? 0
+    }, 200, corsHeaders);
+ 
+  } catch (err) {
+    return json({ ok: false, error: err.message }, 500, corsHeaders);
+  }
+}
+
 
 async function handleTrigger(request, env, corsHeaders) {
   if (request.method !== 'POST') {
@@ -737,6 +884,46 @@ async function handleSiteSourceMappings(request, env, corsHeaders) {
     corsHeaders
   );
 }
+
+async function handleSiteHealth(request, env, corsHeaders) {
+  try {
+    const url = new URL(request.url);
+    const siteUrl = url.searchParams.get('site');
+    if (!siteUrl) {
+      return json({ ok: false, error: 'Missing site param' }, 400, corsHeaders);
+    }
+ 
+    const db = env.DB;
+ 
+    const [healthRow, risks, opportunities, actions, changes] = await Promise.all([
+      db.prepare(`SELECT * FROM site_health_summaries WHERE site_url = ?`).bind(siteUrl).first(),
+      db.prepare(`SELECT * FROM site_risk_flags WHERE site_url = ? ORDER BY
+                    CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END`)
+        .bind(siteUrl).all(),
+      db.prepare(`SELECT * FROM site_opportunity_flags WHERE site_url = ? ORDER BY
+                    CASE potential_impact WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END`)
+        .bind(siteUrl).all(),
+      db.prepare(`SELECT * FROM site_priority_actions WHERE site_url = ? ORDER BY priority ASC`)
+        .bind(siteUrl).all(),
+      db.prepare(`SELECT * FROM site_detected_changes WHERE site_url = ? ORDER BY ABS(delta_pct) DESC`)
+        .bind(siteUrl).all()
+    ]);
+ 
+    return json({
+      ok: true,
+      site_url: siteUrl,
+      health:        healthRow   || null,
+      risks:         risks.results   || [],
+      opportunities: opportunities.results || [],
+      priority_actions: actions.results || [],
+      changes:       changes.results || []
+    }, 200, corsHeaders);
+ 
+  } catch (err) {
+    return json({ ok: false, error: err.message }, 500, corsHeaders);
+  }
+}
+
 async function handleLatestRun(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
