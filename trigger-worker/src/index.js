@@ -1,5 +1,6 @@
 // trigger-worker/src/index.js
 
+// [NEW FILE: routing/router.js]
 export default {
   async fetch(request, env) {
     const corsHeaders = buildCorsHeaders(request, env);
@@ -79,6 +80,7 @@ export default {
   }
 };
 
+// [NEW FILE: handlers/ingestSummariesHandler.js]
 async function handleIngestSummaries(request, env, corsHeaders) {
   try {
     const secret = request.headers.get('x-ingest-secret');
@@ -221,6 +223,7 @@ async function handleIngestSummaries(request, env, corsHeaders) {
 }
 
 
+// [NEW FILE: handlers/triggerHandler.js]
 async function handleTrigger(request, env, corsHeaders) {
   if (request.method !== 'POST') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -287,6 +290,7 @@ async function handleTrigger(request, env, corsHeaders) {
   );
 }
 
+// [NEW FILE: handlers/siteSummaryHandler.js]
 async function handleSiteSummary(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -494,6 +498,7 @@ async function handleSiteSummary(request, env, corsHeaders) {
 }
 
 
+// [NEW FILE: handlers/ingestGa4Handler.js]
 async function handleIngestGa4(request, env, corsHeaders) {
   if (!env.INGEST_SHARED_SECRET) {
     return json({ ok: false, message: 'Missing INGEST_SHARED_SECRET secret' }, 500, corsHeaders);
@@ -589,6 +594,7 @@ async function handleIngestGa4(request, env, corsHeaders) {
   });
 }
 
+// [NEW FILE: services/freshnessService.js]
 async function upsertGa4FreshnessSummary(db, siteUrl, capturedAt) {
   await db.prepare(
     `INSERT INTO site_freshness_summaries (site_url, ga4_last_updated_at, updated_at)
@@ -599,6 +605,7 @@ async function upsertGa4FreshnessSummary(db, siteUrl, capturedAt) {
   ).bind(siteUrl, capturedAt).run();
 }
 
+// [NEW FILE: handlers/siteGa4Handler.js]
 async function handleSiteGa4(request, env) {
   const url = new URL(request.url);
   const siteUrl = url.searchParams.get('site');
@@ -663,6 +670,7 @@ async function handleSiteGa4(request, env) {
   });
 }
 
+// [NEW FILE: handlers/siteGscHandler.js]
 async function handleSiteGsc(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -816,6 +824,7 @@ async function handleSiteGsc(request, env, corsHeaders) {
   );
 }
 
+// [NEW FILE: handlers/siteSourceMappingsHandler.js]
 async function handleSiteSourceMappings(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -886,6 +895,7 @@ async function handleSiteSourceMappings(request, env, corsHeaders) {
   );
 }
 
+// [NEW FILE: handlers/siteHealthHandler.js]
 async function handleSiteHealth(request, env, corsHeaders) {
   try {
     const url = new URL(request.url);
@@ -929,6 +939,7 @@ async function handleSiteHealth(request, env, corsHeaders) {
 }
 
 
+// [NEW FILE: handlers/latestRunHandler.js]
 async function handleLatestRun(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -954,6 +965,7 @@ async function handleLatestRun(request, env, corsHeaders) {
   );
 }
 
+// [NEW FILE: handlers/ingestRunHandler.js]
 async function handleIngestRun(request, env, corsHeaders) {
   if (request.method !== 'POST') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -1128,6 +1140,7 @@ async function handleIngestRun(request, env, corsHeaders) {
   }
 }
 
+// [NEW FILE: handlers/ingestGscHandler.js]
 async function handleIngestGsc(request, env, corsHeaders) {
   if (request.method !== 'POST') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -1324,6 +1337,7 @@ async function handleIngestGsc(request, env, corsHeaders) {
   }
 }
 
+// [BELONGS TO: services/freshnessService.js]
 async function upsertPagespeedFreshnessSummary(db, siteUrl, capturedAt) {
   const now = new Date().toISOString();
 
@@ -1359,6 +1373,7 @@ async function upsertPagespeedFreshnessSummary(db, siteUrl, capturedAt) {
   ).run();
 }
 
+// [BELONGS TO: services/freshnessService.js]
 async function upsertGscFreshnessSummary(db, input) {
   const now = new Date().toISOString();
 
@@ -1441,6 +1456,7 @@ async function upsertGscFreshnessSummary(db, input) {
     )
     .run();
 }
+// [NEW FILE: repositories/gscRepository.js]
 async function insertGscCountryMetrics(db, rows, snapshotId) {
   if (!rows.length) {
     return;
@@ -1486,6 +1502,7 @@ async function insertGscCountryMetrics(db, rows, snapshotId) {
   await executeBatches(db, statements, 50);
 }
 
+// [BELONGS TO: repositories/gscRepository.js]
 async function insertGscDeviceMetrics(db, rows, snapshotId) {
   if (!rows.length) {
     return;
@@ -1531,6 +1548,7 @@ async function insertGscDeviceMetrics(db, rows, snapshotId) {
   await executeBatches(db, statements, 50);
 }
 
+// [BELONGS TO: repositories/gscRepository.js]
 async function insertSourceSnapshot(db, snapshot) {
   const result = await db.prepare(
     `
@@ -1574,6 +1592,7 @@ async function insertSourceSnapshot(db, snapshot) {
 
   return snapshotId;
 }
+// [NEW FILE: utils/normalizers/gscNormalizer.js]
 function normalizeDevice(value) {
   const normalized = asNullableString(value)?.toUpperCase() || null;
 
@@ -1587,10 +1606,12 @@ function normalizeDevice(value) {
 
   return normalized;
 }
+// [BELONGS TO: utils/normalizers/gscNormalizer.js]
 function toNumber(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
 }
+// [BELONGS TO: utils/normalizers/gscNormalizer.js]
 function normalizeInboundGscQueryMetrics(rows, siteUrl, fallbackDate) {
   return rows
     .map((row) => ({
@@ -1608,6 +1629,7 @@ function normalizeInboundGscQueryMetrics(rows, siteUrl, fallbackDate) {
     .filter((row) => row.query && row.date);
 }
 
+// [BELONGS TO: utils/normalizers/gscNormalizer.js]
 function normalizeInboundGscPageMetrics(rows, siteUrl, fallbackDate) {
   return rows
     .map((row) => ({
@@ -1622,6 +1644,7 @@ function normalizeInboundGscPageMetrics(rows, siteUrl, fallbackDate) {
     .filter((row) => row.page && row.date);
 }
 
+// [BELONGS TO: utils/normalizers/gscNormalizer.js]
 function normalizeInboundGscCountryMetrics(rows, siteUrl, fallbackDate) {
   return rows
     .map((row) => ({
@@ -1636,6 +1659,7 @@ function normalizeInboundGscCountryMetrics(rows, siteUrl, fallbackDate) {
     .filter((row) => row.country && row.date);
 }
 
+// [BELONGS TO: utils/normalizers/gscNormalizer.js]
 function normalizeInboundGscDeviceMetrics(rows, siteUrl, fallbackDate) {
   return rows
     .map((row) => ({
@@ -1650,6 +1674,7 @@ function normalizeInboundGscDeviceMetrics(rows, siteUrl, fallbackDate) {
     .filter((row) => row.device && row.date);
 }
 
+// [BELONGS TO: repositories/gscRepository.js]
 async function insertGscQueryMetrics(db, rows, snapshotId) {
   if (!rows.length) {
     return;
@@ -1716,6 +1741,7 @@ async function insertGscQueryMetrics(db, rows, snapshotId) {
   await executeBatches(db, insertStatements, 50);
 }
 
+// [BELONGS TO: repositories/gscRepository.js]
 async function insertGscPageMetrics(db, rows, snapshotId) {
   if (!rows.length) {
     return;
@@ -1763,6 +1789,7 @@ async function insertGscPageMetrics(db, rows, snapshotId) {
 
 
 // trigger-worker/src/index.js
+// [NEW FILE: repositories/pagespeedRepository.js]
 async function insertSiteResults(db, rows) {
   const statements = rows.map((row) =>
     db.prepare(
@@ -1811,6 +1838,7 @@ async function insertSiteResults(db, rows) {
 
   await executeBatches(db, statements, 50);
 }
+// [BELONGS TO: repositories/pagespeedRepository.js]
 async function insertSiteExtractions(db, rows) {
   if (!rows.length) {
     return;
@@ -1855,12 +1883,14 @@ async function insertSiteExtractions(db, rows) {
 }
 
 
+// [NEW FILE: db/batch.js]
 async function executeBatches(db, statements, batchSize) {
   for (let index = 0; index < statements.length; index += batchSize) {
     await db.batch(statements.slice(index, index + batchSize));
   }
 }
 
+// [NEW FILE: repositories/runsRepository.js]
 async function markRunFailed(db, runId) {
   await db.prepare(
     `
@@ -1874,6 +1904,7 @@ async function markRunFailed(db, runId) {
     .bind(new Date().toISOString(), runId)
     .run();
 }
+// [NEW FILE: handlers/sitesHandler.js]
 async function handleSites(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -1933,6 +1964,7 @@ async function handleSites(request, env, corsHeaders) {
     corsHeaders
   );
 }
+// [NEW FILE: handlers/siteOverviewHandler.js]
 async function handleSiteOverview(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -2055,6 +2087,7 @@ async function handleSiteOverview(request, env, corsHeaders) {
     corsHeaders
   );
 }
+// [BELONGS TO: repositories/runsRepository.js]
 async function getCurrentOrLatestSuccessfulRun(db) {
   const currentRun = await db.prepare(
     `
@@ -2106,6 +2139,7 @@ async function getCurrentOrLatestSuccessfulRun(db) {
 }
 
 
+// [NEW FILE: handlers/sitePagespeedHandler.js]
 async function handleSitePagespeed(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -2220,6 +2254,7 @@ async function handleSitePagespeed(request, env, corsHeaders) {
     corsHeaders
   );
 }
+// [NEW FILE: handlers/siteExtractionsHandler.js]
 async function handleSiteExtractions(request, env, corsHeaders) {
   if (request.method !== 'GET') {
     return json({ ok: false, message: 'Method not allowed' }, 405, corsHeaders);
@@ -2323,6 +2358,7 @@ async function handleSiteExtractions(request, env, corsHeaders) {
   );
 }
 
+// [NEW FILE: utils/normalizers/snapshotNormalizer.js]
 function normalizeSnapshot(runId, snapshot, createdAt) {
   const candidates = collectResultCandidates(snapshot);
   const siteResults = [];
@@ -2425,6 +2461,7 @@ function normalizeSnapshot(runId, snapshot, createdAt) {
 }
 
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function collectResultCandidates(snapshot) {
   const candidates = [];
 
@@ -2480,6 +2517,7 @@ function collectResultCandidates(snapshot) {
   return dedupeCandidates(candidates);
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function buildReportEntryResult(entry, strategyWrapper, groupWrapper) {
   return {
     ...entry,
@@ -2502,6 +2540,7 @@ function buildReportEntryResult(entry, strategyWrapper, groupWrapper) {
   };
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function collectFromSiteWrapper(siteWrapper, payload) {
   const candidates = [];
 
@@ -2558,6 +2597,7 @@ function collectFromSiteWrapper(siteWrapper, payload) {
   return dedupeCandidates(candidates);
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function dedupeCandidates(candidates) {
   const seen = new Set();
   const output = [];
@@ -2578,6 +2618,7 @@ function dedupeCandidates(candidates) {
   return output;
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function mapReportScoresToCategories(scores) {
   if (!isObject(scores)) {
     return {};
@@ -2605,6 +2646,7 @@ function mapReportScoresToCategories(scores) {
   return categories;
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function extractSiteUrl(siteWrapper, result) {
   const values = [
     result?.site_url,
@@ -2634,6 +2676,7 @@ function extractSiteUrl(siteWrapper, result) {
   return null;
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function extractStrategy(strategyHint, result) {
   const value = String(strategyHint || result?.strategy || result?.formFactor || '').toLowerCase();
 
@@ -2648,6 +2691,7 @@ function extractStrategy(strategyHint, result) {
   return null;
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function extractCategories(result) {
   if (isObject(result?.scores)) {
     return mapReportScoresToCategories(result.scores);
@@ -2662,6 +2706,7 @@ function extractCategories(result) {
   );
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function extractAudits(result) {
   return (
     result?.audits ||
@@ -2671,6 +2716,7 @@ function extractAudits(result) {
   );
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function extractMetrics(result, audits) {
   if (isObject(result?.metrics)) {
     return result.metrics;
@@ -2690,6 +2736,7 @@ function extractMetrics(result, audits) {
   );
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function extractExtractions(result, audits) {
   if (isObject(result?.extractions)) {
     return result.extractions;
@@ -2715,6 +2762,7 @@ function extractExtractions(result, audits) {
   };
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function extractCategoryScore(categories, key) {
   const category = categories?.[key];
   if (!isObject(category)) {
@@ -2724,6 +2772,7 @@ function extractCategoryScore(categories, key) {
   return normalizeScore(category.score);
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function normalizeScore(score) {
   if (score === null || score === undefined || score === '') {
     return null;
@@ -2737,6 +2786,7 @@ function normalizeScore(score) {
   return numeric <= 1 ? Math.round(numeric * 100) : Math.round(numeric);
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function extractSnapshotGeneratedAt(payload, snapshotEnvelope, snapshot) {
   const candidates = [
     payload?.snapshot_generated_at,
@@ -2762,6 +2812,7 @@ function extractSnapshotGeneratedAt(payload, snapshotEnvelope, snapshot) {
   return null;
 }
 
+// [BELONGS TO: utils/normalizers/snapshotNormalizer.js]
 function buildRunId(payload) {
   if (payload?.workflow_run_id) {
     const workflowRunId = String(payload.workflow_run_id).trim();
@@ -2776,6 +2827,7 @@ function buildRunId(payload) {
   return crypto.randomUUID();
 }
 
+// [NEW FILE: middleware/cors.js]
 function buildCorsHeaders(request, env) {
   const origin = request.headers.get('Origin') || '';
   const allowOrigin =
@@ -2794,6 +2846,7 @@ function buildCorsHeaders(request, env) {
   };
 }
 
+// [NEW FILE: utils/httpResponse.js]
 function json(payload, status, headers = {}) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -2804,6 +2857,7 @@ function json(payload, status, headers = {}) {
   });
 }
 
+// [NEW FILE: utils/serialization.js]
 function safeJsonStringify(value) {
   try {
     return JSON.stringify(value ?? {});
@@ -2811,6 +2865,7 @@ function safeJsonStringify(value) {
     return JSON.stringify({ serialization_error: true });
   }
 }
+// [BELONGS TO: utils/serialization.js]
 function parseJsonField(value, fallback = null) {
   if (value === null || value === undefined || value === '') {
     return fallback;
@@ -2823,6 +2878,7 @@ function parseJsonField(value, fallback = null) {
   }
 }
 
+// [NEW FILE: utils/typeGuards.js]
 function asNonEmptyString(value) {
   if (typeof value !== 'string') {
     return null;
@@ -2832,6 +2888,7 @@ function asNonEmptyString(value) {
   return trimmed || null;
 }
 
+// [BELONGS TO: utils/typeGuards.js]
 function asNullableString(value) {
   if (value === null || value === undefined) {
     return null;
@@ -2841,6 +2898,39 @@ function asNullableString(value) {
   return stringValue || null;
 }
 
+// [BELONGS TO: utils/typeGuards.js]
 function isObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+
+/*
+ * SUGGESTED FILE STRUCTURE:
+ * routing/router.js                      - worker fetch entrypoint and route dispatch
+ * middleware/cors.js                     - CORS header construction
+ * handlers/triggerHandler.js             - GitHub workflow trigger endpoint logic
+ * handlers/ingestRunHandler.js           - PageSpeed run ingest endpoint logic
+ * handlers/ingestGscHandler.js           - GSC ingest endpoint logic
+ * handlers/ingestGa4Handler.js           - GA4 ingest endpoint logic
+ * handlers/ingestSummariesHandler.js     - site health summary ingest endpoint logic
+ * handlers/latestRunHandler.js           - latest/current run endpoint logic
+ * handlers/sitesHandler.js               - site list endpoint logic
+ * handlers/siteOverviewHandler.js        - consolidated per-site overview endpoint logic
+ * handlers/sitePagespeedHandler.js       - per-site PageSpeed endpoint logic
+ * handlers/siteExtractionsHandler.js     - per-site extraction endpoint logic
+ * handlers/siteSummaryHandler.js         - per-site summary endpoint logic (PageSpeed/GSC/GA4/freshness)
+ * handlers/siteGscHandler.js             - per-site GSC endpoint logic
+ * handlers/siteGa4Handler.js             - per-site GA4 endpoint logic
+ * handlers/siteSourceMappingsHandler.js  - site-source mapping endpoint logic
+ * handlers/siteHealthHandler.js          - site health/risk/opportunity/action endpoint logic
+ * services/freshnessService.js           - freshness summary upsert operations
+ * repositories/runsRepository.js         - run lookup/failure update data access
+ * repositories/pagespeedRepository.js    - PageSpeed result/extraction inserts
+ * repositories/gscRepository.js          - GSC snapshot + metric insert operations
+ * db/batch.js                            - batched D1 statement execution utility
+ * utils/normalizers/gscNormalizer.js     - inbound GSC row normalization helpers
+ * utils/normalizers/snapshotNormalizer.js- report snapshot candidate extraction/normalization helpers
+ * utils/httpResponse.js                  - JSON response helper
+ * utils/serialization.js                 - JSON stringify/parse safety helpers
+ * utils/typeGuards.js                    - string/object guard and coercion helpers
+ */
